@@ -7,30 +7,44 @@
     <!-- 中央圆形主按钮 -->
     <Button
         android:id="@+id/btn_main_float"
-        android:layout_width="50dp"
-        android:layout_height="50dp"
+        android:layout_width="35dp"
+        android:layout_height="35dp"
         android:layout_gravity="top|left"
         android:background="@drawable/float_main_button_shape"
         android:text="+"
         android:textColor="#FFFFFF"
-        android:textSize="24sp"
+        android:textSize="18sp"
         android:elevation="12dp"
         android:gravity="center" />
         
     <!-- 水平展开的按钮容器 -->
     <FrameLayout
         android:id="@+id/float_menu_container"
-        android:layout_width="250dp"
-        android:layout_height="100dp"
+        android:layout_width="200dp"
+        android:layout_height="40dp"
         android:layout_gravity="top|left"
-        android:paddingLeft="55dp"
+        android:paddingLeft="40dp"
         android:paddingTop="0dp">
+
+        <!-- 功能按钮4：任务日志控制 -->
+        <Button
+            android:id="@+id/btn_toggle_log"
+            android:layout_width="35dp"
+            android:layout_height="35dp"
+            android:layout_gravity="top|left"
+            android:background="@drawable/float_button_shape"
+            android:text="日志"
+            android:textColor="#FFFFFF"
+            android:textSize="10sp"
+            android:visibility="gone"
+            android:elevation="8dp"
+            android:gravity="center" />
 
         <!-- 功能按钮3：关闭悬浮窗 -->
         <Button
             android:id="@+id/btn_close_float"
-            android:layout_width="50dp"
-            android:layout_height="50dp"
+            android:layout_width="35dp"
+            android:layout_height="35dp"
             android:layout_gravity="top|left"
             android:background="@drawable/float_button_shape"
             android:text="关闭"
@@ -43,8 +57,8 @@
         <!-- 功能按钮1：捕获元素骨架图 -->
         <Button
             android:id="@+id/btn_capture_skeleton"
-            android:layout_width="50dp"
-            android:layout_height="50dp"
+            android:layout_width="35dp"
+            android:layout_height="35dp"
             android:layout_gravity="top|left"
             android:background="@drawable/float_button_shape"
             android:text="捕获"
@@ -57,8 +71,8 @@
         <!-- 功能按钮2：复制节点数据 -->
         <Button
             android:id="@+id/btn_copy_nodes"
-            android:layout_width="50dp"
-            android:layout_height="50dp"
+            android:layout_width="35dp"
+            android:layout_height="35dp"
             android:layout_gravity="top|left"
             android:background="@drawable/float_button_shape"
             android:text="复制"

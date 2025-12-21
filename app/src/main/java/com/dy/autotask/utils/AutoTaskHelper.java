@@ -41,7 +41,19 @@ public class AutoTaskHelper {
      */
     public boolean isAccessibilityServiceEnabled(Context context) {
         accessibilityService = AccessibilityServiceUtil.getInstance();
-        return accessibilityService != null;
+        if (accessibilityService == null) {
+            return false;
+        }
+        
+        // 进一步检查服务是否真的在运行
+        try {
+            // 尝试获取根节点，如果能成功说明服务正在运行
+            AccessibilityNodeInfo root = accessibilityService.getRootInActiveWindow();
+            return root != null;
+        } catch (Exception e) {
+            // 如果出现异常，说明服务可能没有正确启用
+            return false;
+        }
     }
 
     /**
@@ -56,7 +68,7 @@ public class AutoTaskHelper {
     /**
      * 获取无障碍服务实例
      */
-    private AccessibilityServiceUtil getService() throws IllegalStateException {
+    public AccessibilityServiceUtil getService() throws IllegalStateException {
         if (accessibilityService == null) {
             accessibilityService = AccessibilityServiceUtil.getInstance();
         }

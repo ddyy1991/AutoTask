@@ -1,6 +1,11 @@
 package com.dy.autotask.task;
 
+import android.content.Context;
 import android.util.Log;
+import android.widget.Toast;
+
+import com.dy.autotask.task.TaskLogFileWriter;
+import com.dy.autotask.utils.SettingsManager;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -29,6 +34,21 @@ public class AutomationTaskManager {
     // 任务管理器状态
     private boolean isRunning = false;
     
+    // 应用上下文
+    private Context context;
+    
+    // 任务日志悬浮窗
+    private TaskLogFloatingWindow taskLogWindow;
+    
+    // 任务日志文件写入器
+    private TaskLogFileWriter taskLogFileWriter;
+    
+    // 是否启用任务日志悬浮窗
+    private boolean isLogWindowEnabled = true;
+    
+    // 设置管理器
+    private SettingsManager settingsManager;
+    
     /**
      * 私有构造函数
      */
@@ -42,6 +62,133 @@ public class AutomationTaskManager {
                 60L, TimeUnit.SECONDS,
                 taskQueue
         );
+    }
+    
+    /**
+     * 设置应用上下文
+     * @param context 应用上下文
+     */
+    public void setContext(Context context) {
+        this.context = context;
+        if (context != null) {
+            // 初始化设置管理器
+            settingsManager = SettingsManager.getInstance(context);
+            // 从设置中读取日志窗口启用状态
+            isLogWindowEnabled = settingsManager.isLogWindowEnabled();
+            
+            if (taskLogWindow == null) {
+                taskLogWindow = new TaskLogFloatingWindow(context);
+            }
+            taskLogWindow.setEnabled(isLogWindowEnabled);
+            
+            // 初始化任务日志文件写入器
+            if (taskLogFileWriter == null) {
+                taskLogFileWriter = new TaskLogFileWriter(context);
+            }
+        }
+    }
+    
+    /**
+     * 获取应用上下文
+     * @return 应用上下文
+     */
+    public Context getContext() {
+        return context;
+    }
+    
+    /**
+     * 设置是否启用任务日志悬浮窗
+     * @param enabled 是否启用
+     */
+    public void setLogWindowEnabled(boolean enabled) {
+        isLogWindowEnabled = enabled;
+        if (taskLogWindow != null) {
+            taskLogWindow.setEnabled(enabled);
+        }
+        
+        // 保存设置
+        if (settingsManager != null) {
+            settingsManager.setLogWindowEnabled(enabled);
+        }
+    }
+    
+    /**
+     * 获取是否启用任务日志悬浮窗
+     * @return 是否启用
+     */
+    public boolean isLogWindowEnabled() {
+        return isLogWindowEnabled;
+    }
+    
+    /**
+     * 获取任务日志悬浮窗是否正在显示
+     * @return 是否正在显示
+     */
+    public boolean isLogWindowShowing() {
+        return taskLogWindow != null && taskLogWindow.isShowing();
+    }
+    
+    /**
+     * 显示任务日志悬浮窗
+     */
+    public void showLogWindow() {
+        if (taskLogWindow != null) {
+            taskLogWindow.show();
+        }
+    }
+    
+    /**
+     * 隐藏任务日志悬浮窗
+     */
+    public void hideLogWindow() {
+        if (taskLogWindow != null) {
+            taskLogWindow.hide();
+        }
+    }
+    
+    /**
+     * 添加日志信息
+     * @param message 日志信息
+     */
+    public void addLog(String message) {
+        // 写入日志到文件
+        if (taskLogFileWriter != null) {
+            taskLogFileWriter.writeLog(message);
+        }
+        
+        // 显示日志到悬浮窗
+        if (taskLogWindow != null) {
+            // 根据消息内容确定颜色
+            int color = getColorForMessage(message);
+            // 直接调用TaskLogFloatingWindow的addColoredLog方法
+            taskLogWindow.addColoredLog(message, color);
+        }
+    }
+    
+    /**
+     * 根据消息内容确定颜色
+     * @param message 消息内容
+     * @return 颜色值
+     */
+    private int getColorForMessage(String message) {
+        if (message.contains("失败") || message.contains("FAILED")) {
+            return 0xFFFF0000; // 红色
+        } else if (message.contains("开始执行任务") || message.contains("任务执行中")) {
+            return 0xFF00FF00; // 绿色
+        } else if (message.contains("超时") || message.contains("TIMEOUT")) {
+            return 0xFFFFFF00; // 黄色
+        } else {
+            return 0xFFFFFFFF; // 白色
+        }
+    }
+    
+    /**
+     * 清空日志
+     */
+    public void clearLog() {
+        if (taskLogWindow != null) {
+            taskLogWindow.clearLog();
+        }
     }
     
     /**
@@ -86,8 +233,14 @@ public class AutomationTaskManager {
             return;
         }
         
+        // 显示任务日志悬浮窗
+        if (isLogWindowEnabled) {
+            showLogWindow();
+        }
+        
         isRunning = true;
         Log.d(TAG, "开始执行任务队列");
+        addLog("开始执行任务队列");
     }
     
     /**
@@ -150,6 +303,11 @@ public class AutomationTaskManager {
         // 注意：这里需要重新创建线程池，因为shutdownNow()后不能再提交任务
         // 在实际应用中可能需要更好的处理方式
         
+        // 清理日志文件写入器
+        if (taskLogFileWriter != null) {
+            taskLogFileWriter.cleanup();
+        }
+        
         isRunning = false;
         Log.d(TAG, "所有任务已清空");
     }
@@ -159,6 +317,11 @@ public class AutomationTaskManager {
      * @param task 当前正在执行的任务
      */
     void setCurrentTask(AutomationTask task) {
+        if (this.currentTask != null && !this.currentTask.equals(task)) {
+            addLog("切换任务: 从 '" + this.currentTask.getTaskName() + "' 切换到 '" + task.getTaskName() + "'");
+        } else if (this.currentTask == null) {
+            addLog("开始执行任务: '" + task.getTaskName() + "'");
+        }
         this.currentTask = task;
     }
     

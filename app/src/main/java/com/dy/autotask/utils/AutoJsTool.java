@@ -1,27 +1,23 @@
 package com.dy.autotask.utils;
 
 import android.accessibilityservice.AccessibilityService;
-import android.content.Context;
-import android.content.Intent;
 import android.util.Log;
-import android.view.WindowManager;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.widget.Toast;
 
 /**
- * AutoJs6工具类，封装布局分析功能
+ * AutoJs工具类，封装布局分析功能
  */
-public class AutoJs6Tool {
+public class AutoJsTool {
     private static final String TAG = "AutoJs6Tool";
-    private static AutoJs6Tool instance;
+    private static AutoJsTool instance;
     private AccessibilityService accessibilityService;
 
-    private AutoJs6Tool() {
+    private AutoJsTool() {
     }
 
-    public static synchronized AutoJs6Tool getInstance() {
+    public static synchronized AutoJsTool getInstance() {
         if (instance == null) {
-            instance = new AutoJs6Tool();
+            instance = new AutoJsTool();
         }
         return instance;
     }
