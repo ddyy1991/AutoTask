@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="#FFFFFF"
+    android:padding="8dp"
+    android:elevation="8dp"
+    android:radius="8dp">
+
+    <Button
+        android:id="@+id/btn_view_element_info"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="查看选中元素信息"
+        android:textSize="12sp"
+        android:background="@null"
+        android:textColor="#000000"
+        android:padding="8dp"
+        android:gravity="left" />
+
+    <Button
+        android:id="@+id/btn_view_in_hierarchy"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="在布局层次中查看"
+        android:textSize="12sp"
+        android:background="@null"
+        android:textColor="#000000"
+        android:padding="8dp"
+        android:gravity="left" />
+
+    <Button
+        android:id="@+id/btn_close_skeleton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="关闭悬浮窗"
+        android:textSize="12sp"
+        android:background="@null"
+        android:textColor="#FF0000"
+        android:padding="8dp"
+        android:gravity="left" />
+
+</LinearLayout>

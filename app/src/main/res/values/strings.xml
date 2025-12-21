@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">AutoTask</string>
+    <string name="accessibility_service_description">无障碍服务，用于自动化任务和元素查找</string>
+</resources>

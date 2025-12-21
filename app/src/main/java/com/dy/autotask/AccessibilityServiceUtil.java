@@ -1,0 +1,1783 @@
+package com.dy.autotask;
+
+import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.PixelFormat;
+import android.graphics.Rect;
+import android.os.Build;
+import android.provider.Settings;
+import android.text.TextUtils;
+import android.graphics.Point;
+import android.util.DisplayMetrics;
+import android.util.Log;
+import android.view.Gravity;
+import android.view.LayoutInflater;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.WindowManager;
+import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityNodeInfo;
+import android.widget.Button;
+import android.widget.ExpandableListView;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+import android.graphics.Typeface;
+
+import com.dy.autotask.ui.overlay.HighlightOverlayView;
+
+import com.dy.autotask.utils.AutoJs6Tool;
+import com.dy.autotask.model.NodeInfo;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+/**
+ * 无障碍服务工具类
+ */
+public class AccessibilityServiceUtil extends AccessibilityService {
+    private static final String TAG = "AccessibilityService";
+    private static AccessibilityServiceUtil instance;
+    private WindowManager windowManager;
+    private View floatingView;
+    private TextView infoTextView;
+    private boolean isFloatingViewAdded = false;
+    
+    // 悬浮窗状态管理
+    private boolean isMenuExpanded = false;
+    private Button btnMainFloat;
+    private Button btnCaptureSkeleton;
+    private Button btnCopyNodes;
+    private Button btnCloseFloat;
+    private FrameLayout floatMenuContainer;
+    
+    // 骨架图相关
+    private View skeletonOverlay;
+    private boolean isSkeletonMode = false;
+    private boolean shouldDrawRedHighlight = true; // 控制是否绘制红色高亮框
+    private AccessibilityNodeInfo selectedNode;
+    
+    // 元素信息悬浮窗
+    private View elementInfoView;
+    private boolean isElementInfoShown = false;
+    private boolean isFromLayoutHierarchy = false; // 标志：是否从布局层次跳转过来
+    
+    // 高亮覆盖视图
+    private HighlightOverlayView highlightOverlayView;
+    private boolean isHighlightShown = false;
+    
+    // 悬浮窗拖拽状态
+    // private boolean isDraggingFloatingView = false; // 已移至OnTouchListener内部
+    
+    /**
+     * 显示高亮覆盖视图
+     * @param bounds 要高亮的区域
+     */
+    private void showHighlightOverlay(Rect bounds) {
+        Log.d(TAG, "显示高亮覆盖视图: " + bounds);
+        
+        // 确保窗口管理器已初始化
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (windowManager == null) {
+                Log.e(TAG, "无法获取WindowManager服务");
+                return;
+            }
+        }
+        
+        // 先移除已存在的高亮覆盖视图
+        if (highlightOverlayView != null) {
+            try {
+                windowManager.removeView(highlightOverlayView);
+                highlightOverlayView = null;
+                isHighlightShown = false;
+            } catch (Exception e) {
+                Log.e(TAG, "移除旧高亮覆盖视图失败: " + e.getMessage());
+            }
+        }
+        
+        // 创建高亮覆盖视图
+        highlightOverlayView = new HighlightOverlayView(this);
+        highlightOverlayView.setHighlightRect(bounds);
+        
+        // 设置悬浮窗参数
+        WindowManager.LayoutParams layoutParams = new WindowManager.LayoutParams();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            layoutParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+        } else {
+            layoutParams.type = WindowManager.LayoutParams.TYPE_PHONE;
+        }
+        
+        layoutParams.gravity = Gravity.TOP | Gravity.START;
+        layoutParams.x = 0;
+        layoutParams.y = 0;
+        layoutParams.width = WindowManager.LayoutParams.MATCH_PARENT;
+        layoutParams.height = WindowManager.LayoutParams.MATCH_PARENT;
+        layoutParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                           WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE |
+                           WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+        layoutParams.format = PixelFormat.TRANSLUCENT;
+        
+        // 添加悬浮窗到窗口
+        try {
+            windowManager.addView(highlightOverlayView, layoutParams);
+            isHighlightShown = true;
+            Log.d(TAG, "高亮覆盖视图添加成功");
+        } catch (Exception e) {
+            Log.e(TAG, "添加高亮覆盖视图失败: " + e.getMessage());
+            highlightOverlayView = null;
+            isHighlightShown = false;
+        }
+    }
+    
+    /**
+     * 隐藏高亮覆盖视图
+     */
+    private void hideHighlightOverlay() {
+        Log.d(TAG, "隐藏高亮覆盖视图");
+        
+        if (highlightOverlayView != null && windowManager != null) {
+            try {
+                windowManager.removeView(highlightOverlayView);
+                highlightOverlayView = null;
+                isHighlightShown = false;
+                Log.d(TAG, "高亮覆盖视图移除成功");
+            } catch (Exception e) {
+                Log.e(TAG, "移除高亮覆盖视图失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 获取简化类名，移除包名前缀
+     * @param fullClassName 完整类名
+     * @return 简化类名
+     */
+    private String getSimplifiedClassName(String fullClassName) {
+        if (fullClassName == null) {
+            return "未知类名";
+        }
+        
+        String simplified = fullClassName;
+        
+        // 移除常见的包名前缀
+        String[] prefixes = {
+            "android.widget.",
+            "android.view.",
+            "android.webkit.",
+            "android.support.v7.widget.",
+            "androidx.recyclerview.widget.",
+            "androidx.appcompat.widget.",
+            "androidx.viewpager.widget.",
+            "androidx.swiperefreshlayout.widget.",
+            "com.google.android.material."
+        };
+        
+        for (String prefix : prefixes) {
+            if (simplified.startsWith(prefix)) {
+                simplified = simplified.substring(prefix.length());
+                break;
+            }
+        }
+        
+        return simplified;
+    }
+    
+    /**
+     * 检查是否具有悬浮窗权限
+     */
+    private boolean hasFloatWindowPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return Settings.canDrawOverlays(this);
+        }
+        return true; // 低版本默认有权限
+    }
+
+    // 单例模式，确保全局唯一实例
+    public static synchronized AccessibilityServiceUtil getInstance() {
+        return instance;
+    }
+    
+    /**
+     * 初始化或重新初始化悬浮窗
+     */
+    public void initOrUpdateFloatingView() {
+        // 如果悬浮窗已存在，先移除
+        if (isFloatingViewAdded && floatingView != null && windowManager != null) {
+            try {
+                windowManager.removeView(floatingView);
+                isFloatingViewAdded = false;
+            } catch (Exception e) {
+                Log.e(TAG, "移除旧悬浮窗失败: " + e.getMessage());
+            }
+        }
+        
+        // 重新初始化悬浮窗
+        initFloatingView();
+    }
+
+    @Override
+    protected void onServiceConnected() {
+        super.onServiceConnected();
+        Log.d(TAG, "无障碍服务已连接");
+        instance = this;
+        
+        // 配置无障碍服务信息
+        AccessibilityServiceInfo info = new AccessibilityServiceInfo();
+        info.eventTypes = AccessibilityEvent.TYPES_ALL_MASK;
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC;
+        info.flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS |
+                     AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS |
+                     AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        info.notificationTimeout = 100;
+        setServiceInfo(info);
+        
+        // 初始化AutoJs6工具
+        AutoJs6Tool.getInstance().init(this);
+        
+        // 初始化悬浮窗
+        initOrUpdateFloatingView();
+    }
+
+    /**
+     * 初始化悬浮窗
+     */
+    private void initFloatingView() {
+        Log.d(TAG, "开始初始化悬浮窗");
+        
+        // 检查是否已有悬浮窗
+        if (isFloatingViewAdded && floatingView != null) {
+            Log.d(TAG, "悬浮窗已存在，无需重复初始化");
+            return;
+        }
+        
+        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        if (windowManager == null) {
+            Log.e(TAG, "无法获取WindowManager服务");
+            return;
+        }
+        
+        try {
+            floatingView = LayoutInflater.from(this).inflate(R.layout.floating_view_layout, null);
+            Log.d(TAG, "悬浮窗布局加载成功");
+        } catch (Exception e) {
+            Log.e(TAG, "加载悬浮窗布局失败: " + e.getMessage());
+            return;
+        }
+        
+        // 检查悬浮窗权限
+        if (!hasFloatWindowPermission()) {
+            Log.w(TAG, "没有悬浮窗权限，无法显示悬浮窗");
+            Toast.makeText(this, "请授予悬浮窗权限以使用功能", Toast.LENGTH_LONG).show();
+            return;
+        } else {
+            Log.d(TAG, "已获得悬浮窗权限");
+        }
+        
+        // 设置悬浮窗参数
+        final WindowManager.LayoutParams params = new WindowManager.LayoutParams();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            params.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+        } else {
+            params.type = WindowManager.LayoutParams.TYPE_PHONE;
+        }
+        
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.x = 0;
+        
+        // 计算屏幕中间位置的y坐标
+        DisplayMetrics displayMetrics = new DisplayMetrics();
+        windowManager.getDefaultDisplay().getMetrics(displayMetrics);
+        int screenHeight = displayMetrics.heightPixels;
+        // 悬浮窗高度约为50dp，设置y坐标为屏幕中间位置
+        params.y = screenHeight / 2 - (int)(25 * displayMetrics.density);
+        
+        params.width = WindowManager.LayoutParams.WRAP_CONTENT;
+        params.height = WindowManager.LayoutParams.WRAP_CONTENT;
+        params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | 
+                       WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                       WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
+                       WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
+        params.format = PixelFormat.TRANSLUCENT;
+        
+        // 添加悬浮窗到窗口
+        try {
+            windowManager.addView(floatingView, params);
+            isFloatingViewAdded = true;
+            Log.d(TAG, "悬浮窗添加成功");
+            Toast.makeText(this, "悬浮窗已显示，点击蓝色按钮使用功能", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Log.e(TAG, "添加悬浮窗失败: " + e.getMessage());
+            isFloatingViewAdded = false;
+            Toast.makeText(this, "悬浮窗显示失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            return;
+        }
+        
+        // 初始化悬浮窗控件
+        initFloatingControls();
+        
+        // 设置按钮点击事件
+        setFloatingButtonListeners();
+        
+        Log.d(TAG, "悬浮窗初始化完成");
+    }
+    
+    /**
+     * 初始化悬浮窗控件
+     */
+    private void initFloatingControls() {
+        Log.d(TAG, "开始初始化悬浮窗控件");
+        
+        if (floatingView == null) {
+            Log.e(TAG, "悬浮窗视图为null，无法初始化控件");
+            return;
+        }
+        
+        try {
+            btnMainFloat = floatingView.findViewById(R.id.btn_main_float);
+            btnCaptureSkeleton = floatingView.findViewById(R.id.btn_capture_skeleton);
+            btnCopyNodes = floatingView.findViewById(R.id.btn_copy_nodes);
+            btnCloseFloat = floatingView.findViewById(R.id.btn_close_float);
+            floatMenuContainer = floatingView.findViewById(R.id.float_menu_container);
+            
+            Log.d(TAG, "控件查找结果: btnMainFloat=" + (btnMainFloat != null) + ", btnCaptureSkeleton=" + (btnCaptureSkeleton != null) + ", btnCopyNodes=" + (btnCopyNodes != null) + ", btnCloseFloat=" + (btnCloseFloat != null) + ", floatMenuContainer=" + (floatMenuContainer != null));
+            
+            if (btnMainFloat == null || btnCaptureSkeleton == null || btnCopyNodes == null || btnCloseFloat == null || floatMenuContainer == null) {
+                Log.e(TAG, "无法找到悬浮窗中的控件");
+                return;
+            }
+            
+            // 设置悬浮窗拖拽功能
+            setFloatingViewDraggable();
+            
+            Log.d(TAG, "悬浮窗控件初始化成功");
+        } catch (Exception e) {
+            Log.e(TAG, "初始化悬浮窗控件失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 设置悬浮窗可拖拽
+     */
+    private void setFloatingViewDraggable() {
+        if (floatingView == null || btnMainFloat == null) {
+            return;
+        }
+        
+        // 移除长按阈值限制，允许直接拖动
+        final int DRAG_THRESHOLD = 5; // 降低拖拽阈值，提高灵敏度
+        
+        // 为蓝色主按钮设置触摸监听器，实现直接拖动
+        btnMainFloat.setOnTouchListener(new View.OnTouchListener() {
+            private int initialX, initialY;
+            private float initialTouchX, initialTouchY;
+            private boolean isDragging = false;
+            
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                WindowManager.LayoutParams params = (WindowManager.LayoutParams) floatingView.getLayoutParams();
+                
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        // 记录初始位置
+                        initialX = params.x;
+                        initialY = params.y;
+                        initialTouchX = event.getRawX();
+                        initialTouchY = event.getRawY();
+                        isDragging = false;
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        // 计算移动距离
+                        float deltaX = event.getRawX() - initialTouchX;
+                        float deltaY = event.getRawY() - initialTouchY;
+                        
+                        // 判断是否开始拖拽
+                        if (!isDragging && (Math.abs(deltaX) > DRAG_THRESHOLD || Math.abs(deltaY) > DRAG_THRESHOLD)) {
+                            isDragging = true;
+                        }
+                        
+                        // 计算新位置
+                        int newX = initialX + (int) deltaX;
+                        int newY = initialY + (int) deltaY;
+                        
+                        // 添加边界检测，限制悬浮窗不能拖出屏幕
+                        if (windowManager != null) {
+                            try {
+                                // 获取屏幕尺寸
+                                Point screenSize = new Point();
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    // Android 11及以上版本
+                                    getDisplay().getRealSize(screenSize);
+                                } else {
+                                    // 更早的版本
+                                    windowManager.getDefaultDisplay().getRealSize(screenSize);
+                                }
+                                
+                                // 使用固定的悬浮窗尺寸（60dp）
+                                int floatingViewWidth = 60; // dp
+                                int floatingViewHeight = 60; // dp
+                                
+                                // 将dp转换为像素
+                                float density = getResources().getDisplayMetrics().density;
+                                int floatingViewWidthPx = (int) (floatingViewWidth * density + 0.5f);
+                                int floatingViewHeightPx = (int) (floatingViewHeight * density + 0.5f);
+                                
+                                // 限制X轴边界
+                                newX = Math.max(0, Math.min(newX, screenSize.x - floatingViewWidthPx));
+                                
+                                // 限制Y轴边界
+                                newY = Math.max(0, Math.min(newY, screenSize.y - floatingViewHeightPx));
+                            } catch (Exception e) {
+                                Log.e(TAG, "计算边界时出错: " + e.getMessage());
+                                // 出错时不限制边界
+                            }
+                        }
+                        
+                        // 更新悬浮窗位置
+                        params.x = newX;
+                        params.y = newY;
+                        windowManager.updateViewLayout(floatingView, params);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        // 检查是否为点击事件
+                        if (!isDragging) {
+                            btnMainFloat.performClick();
+                        }
+                        isDragging = false;
+                        return true;
+                }
+                return false;
+            }
+        });
+    }
+    
+    /**
+     * 设置悬浮窗按钮监听事件
+     */
+    private void setFloatingButtonListeners() {
+        // 主按钮点击事件：展开/收起扇形菜单
+        btnMainFloat.setOnClickListener(v -> {
+            toggleMenuExpansion();
+        });
+        
+        // 功能按钮1：捕获元素骨架图
+        btnCaptureSkeleton.setOnClickListener(v -> {
+            captureSkeleton();
+            toggleMenuExpansion(); // 收起菜单
+        });
+        
+        // 功能按钮2：复制节点层次数据
+        btnCopyNodes.setOnClickListener(v -> {
+            copyNodeHierarchy();
+            toggleMenuExpansion(); // 收起菜单
+        });
+        
+        // 功能按钮3：关闭悬浮窗
+        btnCloseFloat.setOnClickListener(v -> {
+            closeFloatingView();
+        });
+    }
+    
+    /**
+     * 切换菜单展开/收起状态
+     */
+    private void toggleMenuExpansion() {
+        if (isMenuExpanded) {
+            collapseMenu();
+        } else {
+            expandMenu();
+        }
+        isMenuExpanded = !isMenuExpanded;
+    }
+    
+    /**
+     * 展开菜单（右侧水平排列）
+     */
+    private void expandMenu() {
+        if (btnCaptureSkeleton == null || btnCopyNodes == null || btnCloseFloat == null) {
+            return;
+        }
+        
+        // 设置按钮可见性
+        btnCaptureSkeleton.setVisibility(View.VISIBLE);
+        btnCopyNodes.setVisibility(View.VISIBLE);
+        btnCloseFloat.setVisibility(View.VISIBLE);
+        
+        // 获取屏幕密度，用于dp转px
+        float density = getResources().getDisplayMetrics().density;
+        // 按钮大小为50dp，间距为5dp
+        int buttonWidthPx = (int) (50 * density);
+        int spacingPx = (int) (5 * density);
+        
+        // 水平排列，从主按钮右侧开始，间距5dp
+        // 按钮1：最右侧
+        int x1 = buttonWidthPx * 2 + spacingPx * 2;
+        int y1 = 0;
+        
+        // 按钮2：中间
+        int x2 = buttonWidthPx + spacingPx;
+        int y2 = 0;
+        
+        // 按钮3：最左侧（靠近主按钮）
+        int x3 = 0;
+        int y3 = 0;
+        
+        // 应用展开动画
+        animateButton(btnCaptureSkeleton, x1, y1, 0);
+        animateButton(btnCopyNodes, x2, y2, 150);
+        animateButton(btnCloseFloat, x3, y3, 300);
+        
+        // 主按钮旋转动画
+        btnMainFloat.animate()
+                .rotation(45)
+                .setDuration(300)
+                .start();
+    }
+    
+    /**
+     * 收起扇形菜单
+     */
+    private void collapseMenu() {
+        if (btnCaptureSkeleton == null || btnCopyNodes == null || btnCloseFloat == null) {
+            return;
+        }
+        
+        // 应用收起动画
+        animateButtonBack(btnCaptureSkeleton, 300);
+        animateButtonBack(btnCopyNodes, 150);
+        animateButtonBack(btnCloseFloat, 0);
+        
+        // 主按钮旋转动画
+        btnMainFloat.animate()
+                .rotation(0)
+                .setDuration(300)
+                .start();
+    }
+    
+    /**
+     * 按钮展开动画
+     */
+    private void animateButton(View button, int x, int y, long delay) {
+        button.animate()
+                .translationX(x)
+                .translationY(y)
+                .alpha(1f)
+                .setDuration(300)
+                .setStartDelay(delay)
+                .start();
+    }
+    
+    /**
+     * 按钮收起动画
+     */
+    private void animateButtonBack(View button, long delay) {
+        button.animate()
+                .translationX(0)
+                .translationY(0)
+                .alpha(0f)
+                .setDuration(300)
+                .setStartDelay(delay)
+                .withEndAction(() -> {
+                    button.setVisibility(View.GONE);
+                })
+                .start();
+    }
+    
+    /**
+     * 捕获元素骨架图
+     */
+    private void captureSkeleton() {
+        Log.d(TAG, "捕获元素骨架图");
+        if (isSkeletonMode) {
+            removeSkeletonOverlay();
+        } else {
+            drawSkeletonOverlay();
+        }
+        isSkeletonMode = !isSkeletonMode;
+    }
+    
+    /**
+     * 复制节点层次数据
+     */
+    private void copyNodeHierarchy() {
+        Log.d(TAG, "复制节点层次数据");
+        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+        if (rootNode != null) {
+            StringBuilder info = new StringBuilder();
+            traverseNode(rootNode, info, 0);
+            
+            // 复制到剪贴板
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("节点层次数据", info.toString());
+            clipboard.setPrimaryClip(clip);
+            
+            // 显示提示
+            showToast("节点层次数据已复制到剪贴板");
+        }
+    }
+    
+    /**
+     * 关闭悬浮窗
+     */
+    private void closeFloatingView() {
+        Log.d(TAG, "关闭悬浮窗");
+        if (isFloatingViewAdded && floatingView != null && windowManager != null) {
+            try {
+                windowManager.removeView(floatingView);
+                isFloatingViewAdded = false;
+                Log.d(TAG, "悬浮窗已关闭");
+            } catch (Exception e) {
+                Log.e(TAG, "关闭悬浮窗失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 绘制骨架图覆盖层
+     */
+    private void drawSkeletonOverlay() {
+        Log.d(TAG, "绘制骨架图覆盖层");
+        
+        // 确保窗口管理器已初始化
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (windowManager == null) {
+                Log.e(TAG, "无法获取WindowManager服务");
+                return;
+            }
+        }
+        
+        // 创建透明覆盖层
+        skeletonOverlay = new View(this) {
+            @Override
+            protected void onDraw(Canvas canvas) {
+                super.onDraw(canvas);
+                drawElementSkeletons(canvas);
+            }
+        };
+        
+        // 设置覆盖层参数
+        WindowManager.LayoutParams overlayParams = new WindowManager.LayoutParams();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            overlayParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+        } else {
+            overlayParams.type = WindowManager.LayoutParams.TYPE_PHONE;
+        }
+        
+        overlayParams.gravity = Gravity.TOP | Gravity.START;
+        overlayParams.x = 0;
+        overlayParams.y = 0;
+        overlayParams.width = WindowManager.LayoutParams.MATCH_PARENT;
+        overlayParams.height = WindowManager.LayoutParams.MATCH_PARENT;
+        overlayParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                               WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                               WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
+        overlayParams.format = PixelFormat.TRANSLUCENT;
+        
+        // 添加覆盖层到窗口
+        try {
+            windowManager.addView(skeletonOverlay, overlayParams);
+            Log.d(TAG, "骨架图覆盖层添加成功");
+        } catch (Exception e) {
+            Log.e(TAG, "添加骨架图覆盖层失败: " + e.getMessage());
+            skeletonOverlay = null;
+            return;
+        }
+        
+        // 设置覆盖层点击事件
+        skeletonOverlay.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    int x = (int) event.getX();
+                    int y = (int) event.getY();
+                    handleElementClick(x, y);
+                    return true;
+                }
+                return false;
+            }
+        });
+    }
+    
+
+    
+    /**
+     * 遍历元素并绘制边框
+     */
+    private void traverseAndDrawElements(AccessibilityNodeInfo node, Canvas canvas, Paint paint) {
+        if (node == null || canvas == null || paint == null) {
+            return;
+        }
+        
+        // 绘制当前元素边框
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        canvas.drawRect(bounds, paint);
+        
+        // 递归遍历子元素
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo childNode = node.getChild(i);
+            if (childNode != null) {
+                traverseAndDrawElements(childNode, canvas, paint);
+                childNode.recycle();
+            }
+        }
+    }
+    
+    /**
+     * 处理元素点击事件
+     */
+    private void handleElementClick(int x, int y) {
+        Log.d(TAG, "元素点击位置: x=" + x + ", y=" + y);
+        
+        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+        if (rootNode == null) {
+            Log.w(TAG, "无法获取根节点");
+            return;
+        }
+        
+        // 查找点击位置的元素
+        AccessibilityNodeInfo clickedNode = findNodeAtPosition(rootNode, x, y);
+        if (clickedNode != null) {
+            selectedNode = clickedNode;
+            
+            // 重绘骨架图，高亮选中元素
+            if (skeletonOverlay != null) {
+                skeletonOverlay.invalidate();
+            }
+            
+            // 显示元素操作菜单
+            showElementActionMenu(x, y);
+        }
+        
+        // 回收根节点
+        rootNode.recycle();
+    }
+    
+    /**
+     * 绘制元素骨架
+     */
+    private void drawElementSkeletons(Canvas canvas) {
+        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+        if (rootNode == null) {
+            Log.w(TAG, "无法获取根节点");
+            return;
+        }
+        
+        // 创建绿色画笔
+        Paint paint = new Paint();
+        paint.setColor(Color.GREEN);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(2f);
+        
+        // 遍历所有元素并绘制边框
+        traverseAndDrawElements(rootNode, canvas, paint);
+        
+        // 高亮绘制选中元素
+        if (selectedNode != null && shouldDrawRedHighlight) {
+            Paint highlightPaint = new Paint();
+            highlightPaint.setColor(Color.RED);
+            highlightPaint.setStyle(Paint.Style.STROKE);
+            highlightPaint.setStrokeWidth(4f);
+            highlightPaint.setStrokeCap(Paint.Cap.ROUND);
+            highlightPaint.setStrokeJoin(Paint.Join.ROUND);
+            
+            Rect bounds = new Rect();
+            selectedNode.getBoundsInScreen(bounds);
+            canvas.drawRect(bounds, highlightPaint);
+        }
+        
+        // 回收根节点
+        rootNode.recycle();
+    }
+    
+    /**
+     * 查找指定位置的元素
+     */
+    private AccessibilityNodeInfo findNodeAtPosition(AccessibilityNodeInfo node, int x, int y) {
+        if (node == null) {
+            return null;
+        }
+        
+        // 检查当前节点是否包含点击位置
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        if (bounds.contains(x, y)) {
+            // 递归检查子节点，返回最内层的元素
+            for (int i = 0; i < node.getChildCount(); i++) {
+                AccessibilityNodeInfo childNode = node.getChild(i);
+                if (childNode != null) {
+                    AccessibilityNodeInfo foundNode = findNodeAtPosition(childNode, x, y);
+                    childNode.recycle();
+                    if (foundNode != null) {
+                        return foundNode;
+                    }
+                }
+            }
+            // 如果没有子节点包含点击位置，返回当前节点
+            return AccessibilityNodeInfo.obtain(node);
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 显示元素操作菜单
+     */
+    private void showElementActionMenu(int x, int y) {
+        Log.d(TAG, "显示元素操作菜单");
+        
+        // 确保窗口管理器已初始化
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (windowManager == null) {
+                Log.e(TAG, "无法获取WindowManager服务");
+                return;
+            }
+        }
+        
+        // 先移除已存在的菜单
+        if (elementInfoView != null) {
+            try {
+                windowManager.removeView(elementInfoView);
+                elementInfoView = null;
+                isElementInfoShown = false;
+            } catch (Exception e) {
+                Log.e(TAG, "移除旧菜单失败: " + e.getMessage());
+            }
+        }
+        
+        // 创建元素操作菜单
+        elementInfoView = LayoutInflater.from(this).inflate(R.layout.element_action_menu, null);
+        
+        // 设置菜单参数
+        WindowManager.LayoutParams menuParams = new WindowManager.LayoutParams();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            menuParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+        } else {
+            menuParams.type = WindowManager.LayoutParams.TYPE_PHONE;
+        }
+        
+        menuParams.gravity = Gravity.TOP | Gravity.START;
+        menuParams.x = x;
+        menuParams.y = y;
+        menuParams.width = WindowManager.LayoutParams.WRAP_CONTENT;
+        menuParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
+        menuParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                           WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                           WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
+        menuParams.format = PixelFormat.TRANSLUCENT;
+        
+        // 添加菜单到窗口
+        try {
+            windowManager.addView(elementInfoView, menuParams);
+            isElementInfoShown = true;
+            Log.d(TAG, "元素操作菜单添加成功");
+        } catch (Exception e) {
+            Log.e(TAG, "添加元素操作菜单失败: " + e.getMessage());
+            elementInfoView = null;
+            isElementInfoShown = false;
+            return;
+        }
+        
+        // 设置菜单按钮点击事件
+        setElementActionMenuListeners();
+    }
+    
+    /**
+     * 设置元素操作菜单按钮监听器
+     */
+    private void setElementActionMenuListeners() {
+        if (elementInfoView == null) {
+            return;
+        }
+        
+        // 查看选中元素信息按钮
+        Button btnViewElementInfo = elementInfoView.findViewById(R.id.btn_view_element_info);
+        // 在布局层次中查看按钮
+        Button btnViewInHierarchy = elementInfoView.findViewById(R.id.btn_view_in_hierarchy);
+        // 关闭悬浮窗按钮
+        Button btnCloseSkeleton = elementInfoView.findViewById(R.id.btn_close_skeleton);
+        
+        if (btnViewElementInfo != null) {
+            btnViewElementInfo.setOnClickListener(v -> {
+                showElementDetails();
+            });
+        }
+        
+        if (btnViewInHierarchy != null) {
+            btnViewInHierarchy.setOnClickListener(v -> {
+                showLayoutHierarchyWithAnalyzer();
+            });
+        }
+        
+        if (btnCloseSkeleton != null) {
+            btnCloseSkeleton.setOnClickListener(v -> {
+                removeSkeletonOverlay();
+                isSkeletonMode = false;
+            });
+        }
+    }
+    
+    /**
+     * 显示元素详细信息
+     */
+    private void showElementDetails() {
+        Log.d(TAG, "显示元素详细信息");
+        
+        if (selectedNode == null) {
+            Log.e(TAG, "没有选中的元素");
+            return;
+        }
+        
+        // 确保窗口管理器已初始化
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (windowManager == null) {
+                Log.e(TAG, "无法获取WindowManager服务");
+                return;
+            }
+        }
+        
+        // 先移除已存在的元素信息窗口
+        if (elementInfoView != null) {
+            try {
+                windowManager.removeView(elementInfoView);
+                elementInfoView = null;
+                isElementInfoShown = false;
+            } catch (Exception e) {
+                Log.e(TAG, "移除旧元素信息窗口失败: " + e.getMessage());
+            }
+        }
+        
+        // 如果不是从布局层次跳转过来的，重置标志
+        if (!isFromLayoutHierarchy) {
+            isFromLayoutHierarchy = false;
+        }
+        
+        // 创建元素信息窗口
+        elementInfoView = LayoutInflater.from(this).inflate(R.layout.element_details_layout, null);
+        
+        // 设置窗口参数
+        WindowManager.LayoutParams detailsParams = new WindowManager.LayoutParams();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            detailsParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+        } else {
+            detailsParams.type = WindowManager.LayoutParams.TYPE_PHONE;
+        }
+        
+        detailsParams.gravity = Gravity.TOP | Gravity.START;
+        detailsParams.x = 0;
+        detailsParams.y = 0;
+        detailsParams.width = WindowManager.LayoutParams.MATCH_PARENT;
+        detailsParams.height = WindowManager.LayoutParams.MATCH_PARENT;
+        detailsParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                           WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+        detailsParams.format = PixelFormat.TRANSLUCENT;
+        detailsParams.alpha = 1.0f; // 设置为不透明背景
+        
+        // 添加窗口到屏幕
+        try {
+            windowManager.addView(elementInfoView, detailsParams);
+            isElementInfoShown = true;
+            Log.d(TAG, "元素信息窗口添加成功");
+        } catch (Exception e) {
+            Log.e(TAG, "添加元素信息窗口失败: " + e.getMessage());
+            elementInfoView = null;
+            isElementInfoShown = false;
+            return;
+        }
+        
+        // 填充元素信息
+        fillElementDetails();
+        
+        // 设置关闭按钮事件
+        Button btnCloseDetails = elementInfoView.findViewById(R.id.btn_close_details);
+        if (btnCloseDetails != null) {
+            btnCloseDetails.setOnClickListener(v -> {
+                try {
+                    if (windowManager != null && elementInfoView != null) {
+                        windowManager.removeView(elementInfoView);
+                        elementInfoView = null;
+                        isElementInfoShown = false;
+                        
+                        // 如果是从布局层次跳转过来的，不需要关闭布局层次界面
+                        if (isFromLayoutHierarchy) {
+                            // 重置标志
+                            isFromLayoutHierarchy = false;
+                            
+                            // 恢复标志位，重新绘制红色高亮框
+                            shouldDrawRedHighlight = true;
+                            
+                            // 重绘骨架图
+                            if (skeletonOverlay != null) {
+                                skeletonOverlay.invalidate();
+                            }
+                            
+                            // 隐藏高亮覆盖视图
+                            hideHighlightOverlay();
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "关闭元素信息窗口失败: " + e.getMessage());
+                }
+            });
+        }
+    }
+    
+    /**
+     * 使用原生API显示布局层次
+     */
+    private void showLayoutHierarchyWithAnalyzer() {
+        Log.d(TAG, "使用原生API显示布局层次");
+        
+        // 设置标志位，不再绘制红色高亮框
+        shouldDrawRedHighlight = false;
+        
+        // 重绘骨架图
+        if (skeletonOverlay != null) {
+            skeletonOverlay.invalidate();
+        }
+        
+        // 创建全屏悬浮窗来显示布局层次
+        showFullscreenLayoutHierarchy();
+    }
+    
+    /**
+     * 从NodeInfo显示元素详情
+     * @param nodeInfo 节点信息
+     */
+    public void showElementDetailsFromNode(com.dy.autotask.model.NodeInfo nodeInfo) {
+        if (nodeInfo == null) {
+            return;
+        }
+        
+        // 将NodeInfo转换为AccessibilityNodeInfo
+        selectedNode = nodeInfo.getAccessibilityNodeInfo();
+        
+        // 设置标志，表示是从布局层次跳转过来的
+        isFromLayoutHierarchy = true;
+        
+        // 显示元素详情
+        showElementDetails();
+    }
+    
+    /**
+     * 填充元素详细信息
+     */
+    private void fillElementDetails() {
+        if (elementInfoView == null || selectedNode == null) {
+            return;
+        }
+        
+        LinearLayout container = elementInfoView.findViewById(R.id.element_info_container);
+        if (container == null) {
+            Log.e(TAG, "无法找到元素信息容器");
+            return;
+        }
+        
+        // 清空容器
+        container.removeAllViews();
+        
+        // 获取元素属性
+        Map<String, String> elementProperties = getElementProperties(selectedNode);
+        
+        // 动态创建属性项
+        for (Map.Entry<String, String> entry : elementProperties.entrySet()) {
+            String propertyName = entry.getKey();
+            String propertyValue = entry.getValue();
+            
+            // 创建属性项布局
+            LinearLayout propertyItem = new LinearLayout(this);
+            propertyItem.setOrientation(LinearLayout.HORIZONTAL);
+            propertyItem.setPadding(0, 8, 0, 8);
+            propertyItem.setGravity(Gravity.CENTER_VERTICAL);
+            
+            // 属性名
+            TextView nameTextView = new TextView(this);
+            nameTextView.setLayoutParams(new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            nameTextView.setText(propertyName);
+            nameTextView.setTextColor(Color.BLACK);
+            nameTextView.setTextSize(16); // 增大字体大小
+            nameTextView.setPadding(0, 8, 0, 8);
+            
+            // 属性值
+            TextView valueTextView = new TextView(this);
+            valueTextView.setLayoutParams(new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f));
+            valueTextView.setText(propertyValue);
+            valueTextView.setTextColor(Color.BLUE);
+            valueTextView.setTextSize(14); // 比属性名小一号字体
+            valueTextView.setTextAlignment(View.TEXT_ALIGNMENT_CENTER); // 居中展示
+            valueTextView.setGravity(Gravity.CENTER);
+            valueTextView.setEllipsize(TextUtils.TruncateAt.END);
+            valueTextView.setSingleLine(false);
+            valueTextView.setClickable(true);
+            valueTextView.setFocusable(true);
+            valueTextView.setTag(propertyValue);
+            
+            // 优化按钮样式
+            valueTextView.setBackgroundResource(R.drawable.attribute_value_button);
+            valueTextView.setPadding(16, 12, 16, 12);
+            valueTextView.setTextColor(getResources().getColor(android.R.color.holo_blue_dark));
+            valueTextView.setTypeface(null, Typeface.BOLD_ITALIC);
+            
+            // 添加点击复制功能
+            valueTextView.setOnClickListener(v -> {
+                String value = (String) v.getTag();
+                ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                ClipData clip = ClipData.newPlainText("元素属性值", value);
+                clipboard.setPrimaryClip(clip);
+                
+                // 显示弹窗内提示
+                showCopySuccessTip();
+            });
+            
+            // 添加到属性项
+            propertyItem.addView(nameTextView);
+            propertyItem.addView(valueTextView);
+            
+            // 添加到容器
+            container.addView(propertyItem);
+        }
+    }
+    
+    /**
+     * 显示复制成功提示
+     */
+    private void showCopySuccessTip() {
+        if (elementInfoView == null) {
+            return;
+        }
+        
+        TextView copySuccessTip = elementInfoView.findViewById(R.id.copy_success_tip);
+        if (copySuccessTip != null) {
+            copySuccessTip.setVisibility(View.VISIBLE);
+            
+            // 1秒后自动隐藏
+            copySuccessTip.postDelayed(() -> {
+                if (copySuccessTip != null && copySuccessTip.isAttachedToWindow()) {
+                    copySuccessTip.setVisibility(View.GONE);
+                }
+            }, 1000);
+        }
+    }
+    
+    /**
+     * 获取元素属性
+     */
+    private Map<String, String> getElementProperties(AccessibilityNodeInfo node) {
+        Map<String, String> properties = new LinkedHashMap<>();
+        
+        if (node == null) {
+            return properties;
+        }
+        
+        // 获取资源ID相关信息
+        String resourceName = node.getViewIdResourceName() != null ? node.getViewIdResourceName() : "null";
+        String id = resourceName != null ? resourceName.contains("/") ? resourceName.substring(resourceName.lastIndexOf("/") + 1) : resourceName : "null";
+        String fullId = resourceName;
+        
+        // 添加新的属性字段，按照要求的顺序排列
+        // 前三个位置：id, fullId, text
+        properties.put("id", id);
+        properties.put("fullId", fullId);
+        properties.put("text", node.getText() != null ? node.getText().toString() : "null");
+        
+        // 基本属性
+        properties.put("className", node.getClassName() != null ? node.getClassName().toString() : "null");
+        properties.put("contentDescription", node.getContentDescription() != null ? node.getContentDescription().toString() : "null");
+        
+        // 位置和大小
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        properties.put("bounds", bounds.toString());
+        
+        // 交互属性
+        properties.put("editable", String.valueOf(node.isEditable()));
+        properties.put("enabled", String.valueOf(node.isEnabled()));
+        properties.put("focusable", String.valueOf(node.isFocusable()));
+        properties.put("focused", String.valueOf(node.isFocused()));
+        properties.put("longClickable", String.valueOf(node.isLongClickable()));
+        properties.put("scrollable", String.valueOf(node.isScrollable()));
+        properties.put("selected", String.valueOf(node.isSelected()));
+        properties.put("clickable", String.valueOf(node.isClickable()));
+        properties.put("checkable", String.valueOf(node.isCheckable()));
+        properties.put("checked", String.valueOf(node.isChecked()));
+        
+        // 其他属性
+        properties.put("idHex", "0x" + Integer.toHexString(node.getViewIdResourceName() != null ? node.getViewIdResourceName().hashCode() : 0));
+        properties.put("packageName", node.getPackageName() != null ? node.getPackageName().toString() : "null");
+        properties.put("row", String.valueOf(-1)); // Android AccessibilityNodeInfo没有直接提供row信息
+        properties.put("rowCount", String.valueOf(0)); // Android AccessibilityNodeInfo没有直接提供rowCount信息
+        properties.put("rowSpan", String.valueOf(-1)); // Android AccessibilityNodeInfo没有直接提供rowSpan信息
+        properties.put("childCount", String.valueOf(node.getChildCount()));
+        properties.put("depth", String.valueOf(getNodeDepth(node)));
+        
+        return properties;
+    }
+    
+    /**
+     * 获取节点深度
+     */
+    private int getNodeDepth(AccessibilityNodeInfo node) {
+        int depth = 0;
+        AccessibilityNodeInfo parent = node.getParent();
+        while (parent != null) {
+            depth++;
+            AccessibilityNodeInfo temp = parent.getParent();
+            parent.recycle();
+            parent = temp;
+        }
+        return depth;
+    }
+    
+    /**
+     * 显示布局层次
+     */
+    
+    /**
+     * 移除骨架图覆盖层
+     */
+    private void removeSkeletonOverlay() {
+        Log.d(TAG, "移除骨架图覆盖层");
+        
+        if (skeletonOverlay != null && windowManager != null) {
+            try {
+                windowManager.removeView(skeletonOverlay);
+                skeletonOverlay = null;
+                Log.d(TAG, "骨架图覆盖层已移除");
+            } catch (Exception e) {
+                Log.e(TAG, "移除骨架图覆盖层失败: " + e.getMessage());
+            }
+        }
+        
+        // 移除元素信息悬浮窗
+        if (elementInfoView != null && windowManager != null) {
+            try {
+                windowManager.removeView(elementInfoView);
+                elementInfoView = null;
+                isElementInfoShown = false;
+            } catch (Exception e) {
+                Log.e(TAG, "移除元素信息悬浮窗失败: " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * 显示全屏布局层次悬浮窗
+     */
+    private void showFullscreenLayoutHierarchy() {
+        Log.d(TAG, "显示全屏布局层次悬浮窗");
+        
+        // 确保窗口管理器已初始化
+        if (windowManager == null) {
+            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+            if (windowManager == null) {
+                Log.e(TAG, "无法获取WindowManager服务");
+                return;
+            }
+        }
+        
+        // 先移除已存在的悬浮窗
+        if (elementInfoView != null) {
+            try {
+                windowManager.removeView(elementInfoView);
+                elementInfoView = null;
+                isElementInfoShown = false;
+            } catch (Exception e) {
+                Log.e(TAG, "移除旧悬浮窗失败: " + e.getMessage());
+            }
+        }
+        
+        // 创建布局层次悬浮窗
+        elementInfoView = LayoutInflater.from(this).inflate(R.layout.layout_hierarchy_display, null);
+        
+        // 设置悬浮窗参数
+        WindowManager.LayoutParams layoutParams = new WindowManager.LayoutParams();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            layoutParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+        } else {
+            layoutParams.type = WindowManager.LayoutParams.TYPE_PHONE;
+        }
+        
+        layoutParams.gravity = Gravity.TOP | Gravity.START;
+        layoutParams.x = 0;
+        layoutParams.y = 0;
+        layoutParams.width = WindowManager.LayoutParams.MATCH_PARENT;
+        layoutParams.height = WindowManager.LayoutParams.MATCH_PARENT;
+        layoutParams.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                           WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+        layoutParams.format = PixelFormat.TRANSLUCENT;
+        layoutParams.alpha = 1.0f;
+        
+        // 添加悬浮窗到窗口
+        try {
+            windowManager.addView(elementInfoView, layoutParams);
+            isElementInfoShown = true;
+            Log.d(TAG, "全屏布局层次悬浮窗添加成功");
+        } catch (Exception e) {
+            Log.e(TAG, "添加全屏布局层次悬浮窗失败: " + e.getMessage());
+            elementInfoView = null;
+            isElementInfoShown = false;
+            return;
+        }
+        
+        // 显示布局层次树
+        com.dy.autotask.ui.layoutinspector.LayoutHierarchyView hierarchyView = elementInfoView.findViewById(R.id.layout_hierarchy_view);
+        if (hierarchyView != null) {
+            // 设置点击高亮回调
+            hierarchyView.setOnItemClickHighlightListener(bounds -> {
+                showHighlightOverlay(bounds);
+            });
+            
+            AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+            if (rootNode != null) {
+                // 检查根节点是否可见，只有根节点可见时才显示布局层次
+                if (rootNode.isVisibleToUser()) {
+                    NodeInfo nodeInfo = NodeInfo.capture(rootNode);
+                    hierarchyView.setRootNode(nodeInfo);
+                    // 如果有选中的节点，设置并高亮显示
+                    if (selectedNode != null) {
+                        hierarchyView.setSelectedNode(selectedNode);
+                        
+                        // 获取选中节点的边界并显示红色线框
+                        Rect bounds = new Rect();
+                        selectedNode.getBoundsInScreen(bounds);
+                        showHighlightOverlay(bounds);
+                    }
+                } else {
+                    // 根节点不可见时，显示提示信息
+                    Toast.makeText(this, "当前窗口根节点不可见，无法显示布局层次", Toast.LENGTH_SHORT).show();
+                }
+            }
+        }
+        
+        // 设置关闭按钮事件
+        Button btnCloseHierarchy = elementInfoView.findViewById(R.id.btn_close_hierarchy);
+        if (btnCloseHierarchy != null) {
+            btnCloseHierarchy.setOnClickListener(v -> {
+                try {
+                    if (windowManager != null && elementInfoView != null) {
+                        windowManager.removeView(elementInfoView);
+                        elementInfoView = null;
+                        isElementInfoShown = false;
+                        
+                        // 恢复标志位，重新绘制红色高亮框
+                        shouldDrawRedHighlight = true;
+                        
+                        // 重绘骨架图
+                        if (skeletonOverlay != null) {
+                            skeletonOverlay.invalidate();
+                        }
+                        
+                        // 隐藏高亮覆盖视图
+                        hideHighlightOverlay();
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "关闭布局层次悬浮窗失败: " + e.getMessage());
+                }
+            });
+        }
+    }
+    
+    /**
+     * 显示Toast提示
+     */
+    private void showToast(String message) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * 显示当前窗口信息
+     */
+    private void showCurrentWindowInfo() {
+        Log.d(TAG, "开始获取当前窗口信息");
+        
+        if (infoTextView == null) {
+            Log.e(TAG, "infoTextView为空");
+            return;
+        }
+        
+        AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+        if (rootNode != null) {
+            Log.d(TAG, "获取到根节点，开始构建信息");
+            StringBuilder info = new StringBuilder();
+            info.append("当前窗口信息:\n");
+            info.append("窗口类名: ").append(rootNode.getClassName() != null ? rootNode.getClassName() : "未知").append("\n");
+            info.append("窗口包名: ").append(rootNode.getPackageName() != null ? rootNode.getPackageName() : "未知").append("\n");
+            info.append("子节点数: ").append(rootNode.getChildCount()).append("\n\n");
+            
+            // 获取布局层次结构
+            info.append("布局层次结构:\n");
+            traverseNode(rootNode, info, 0);
+            
+            String infoText = info.toString();
+            Log.d(TAG, "准备显示信息，长度: " + infoText.length());
+            infoTextView.setText(infoText);
+            
+            // 确保滚动到顶部
+            infoTextView.post(() -> {
+                ScrollView scrollView = (ScrollView) infoTextView.getParent();
+                if (scrollView != null) {
+                    scrollView.scrollTo(0, 0);
+                }
+            });
+        } else {
+            Log.w(TAG, "无法获取根节点");
+            infoTextView.setText("无法获取当前窗口信息，请确保已启用无障碍服务并打开了应用界面。");
+        }
+    }
+
+    /**
+     * 遍历节点并构建层次结构信息
+     */
+    private void traverseNode(AccessibilityNodeInfo node, StringBuilder info, int depth) {
+        if (node == null || info == null) return;
+        
+        // 不复制隐藏状态的元素
+        if (!node.isVisibleToUser()) {
+            return;
+        }
+        
+        // 限制递归深度，防止栈溢出
+        if (depth > 50) {
+            info.append("... (递归深度超过限制)\n");
+            return;
+        }
+        
+        // 添加缩进表示层级
+        for (int i = 0; i < depth && i < 20; i++) { // 限制缩进层数
+            info.append("  ");
+        }
+        
+        // 获取简化类名
+        String simplifiedClassName = "未知类名";
+        CharSequence className = node.getClassName();
+        if (className != null) {
+            simplifiedClassName = getSimplifiedClassName(className.toString());
+        }
+        
+        // 获取元素完整ID
+        String fullId = "无ID";
+        if (node.getViewIdResourceName() != null) {
+            fullId = node.getViewIdResourceName();
+        }
+        
+        // 获取区域坐标
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        String coordinates = "[" + bounds.left + "," + bounds.top + "," + bounds.right + "," + bounds.bottom + "]";
+        
+        // 添加节点信息：简化类名、完整ID、区域坐标、文本内容（按指定顺序）
+        info.append(simplifiedClassName)
+            .append("|")
+            .append(fullId)
+            .append("|")
+            .append(coordinates)
+            .append("|");
+            
+        // 处理文本内容
+        CharSequence text = node.getText();
+        if (text != null && text.length() > 0) {
+            String textStr = text.toString();
+            // 限制文本长度以防止信息过长
+            if (textStr.length() > 50) {
+                textStr = textStr.substring(0, 50) + "...";
+            }
+            info.append(textStr);
+        } else {
+            info.append(""); // 如果没有文本，添加空字符串以保持格式
+        }
+        
+        info.append("\n");
+        
+        // 递归遍历子节点，限制子节点数量以防止信息过长
+        int childCount = Math.min(node.getChildCount(), 100); // 最多处理100个子节点
+        for (int i = 0; i < childCount; i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                traverseNode(child, info, depth + 1);
+            }
+        }
+        
+        // 如果有更多子节点未处理，添加提示
+        if (node.getChildCount() > childCount) {
+            for (int i = 0; i < depth + 1 && i < 20; i++) {
+                info.append("  ");
+            }
+            info.append("... (还有 ").append(node.getChildCount() - childCount).append(" 个子节点未显示)\n");
+        }
+    }
+
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        // 处理无障碍事件
+        Log.d(TAG, "收到无障碍事件: " + event.toString());
+        
+        // 监听窗口内容变化事件
+        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED || 
+            event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            Log.d(TAG, "窗口内容发生变化");
+            Log.d(TAG, "事件包名: " + event.getPackageName());
+            Log.d(TAG, "事件类名: " + event.getClassName());
+        }
+    }
+
+    @Override
+    public void onInterrupt() {
+        Log.d(TAG, "无障碍服务被中断");
+    }
+
+    @Override
+    public boolean onUnbind(Intent intent) {
+        // 移除悬浮窗
+        if (isFloatingViewAdded && floatingView != null && windowManager != null) {
+            try {
+                windowManager.removeView(floatingView);
+                isFloatingViewAdded = false;
+            } catch (Exception e) {
+                Log.e(TAG, "移除悬浮窗失败: " + e.getMessage());
+            }
+        }
+        return super.onUnbind(intent);
+    }
+
+    // ==================== 元素查找方法 ====================
+
+    /**
+     * 根据文本内容查找节点（带超时）
+     */
+    public AccessibilityNodeInfo findNodeByText(String text, long timeoutMs) throws TimeoutException, InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        final AccessibilityNodeInfo[] result = {null};
+        
+        Thread thread = new Thread(() -> {
+            long startTime = System.currentTimeMillis();
+            while (System.currentTimeMillis() - startTime < timeoutMs) {
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root != null) {
+                    result[0] = findNodeByTextRecursive(root, text);
+                    if (result[0] != null) {
+                        break;
+                    }
+                }
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+            latch.countDown();
+        });
+        
+        thread.start();
+        
+        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            thread.interrupt();
+            throw new TimeoutException("查找节点超时: " + text);
+        }
+        
+        if (result[0] == null) {
+            throw new RuntimeException("未找到节点: " + text);
+        }
+        
+        return result[0];
+    }
+
+    /**
+     * 递归查找文本节点
+     */
+    private AccessibilityNodeInfo findNodeByTextRecursive(AccessibilityNodeInfo node, String text) {
+        if (node == null) return null;
+        
+        // 检查当前节点
+        CharSequence nodeText = node.getText();
+        if (nodeText != null && nodeText.toString().equals(text)) {
+            return node;
+        }
+        
+        // 递归检查子节点
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                AccessibilityNodeInfo result = findNodeByTextRecursive(child, text);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * 根据ID查找节点（带超时）
+     */
+    public AccessibilityNodeInfo findNodeById(String viewId, long timeoutMs) throws TimeoutException, InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        final AccessibilityNodeInfo[] result = {null};
+        
+        Thread thread = new Thread(() -> {
+            long startTime = System.currentTimeMillis();
+            while (System.currentTimeMillis() - startTime < timeoutMs) {
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root != null) {
+                    result[0] = root.findAccessibilityNodeInfosByViewId(viewId).get(0);
+                    if (result[0] != null) {
+                        break;
+                    }
+                }
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+            latch.countDown();
+        });
+        
+        thread.start();
+        
+        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            thread.interrupt();
+            throw new TimeoutException("查找节点超时: " + viewId);
+        }
+        
+        if (result[0] == null) {
+            throw new RuntimeException("未找到节点: " + viewId);
+        }
+        
+        return result[0];
+    }
+
+    /**
+     * 根据类名查找节点（带超时）
+     */
+    public List<AccessibilityNodeInfo> findNodesByClass(String className, long timeoutMs) throws TimeoutException, InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        final List<AccessibilityNodeInfo>[] result = new List[]{new ArrayList<>()};
+        
+        Thread thread = new Thread(() -> {
+            long startTime = System.currentTimeMillis();
+            while (System.currentTimeMillis() - startTime < timeoutMs) {
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root != null) {
+                    result[0] = findNodesByClassRecursive(root, className);
+                    if (!result[0].isEmpty()) {
+                        break;
+                    }
+                }
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+            latch.countDown();
+        });
+        
+        thread.start();
+        
+        if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            thread.interrupt();
+            throw new TimeoutException("查找节点超时: " + className);
+        }
+        
+        return result[0];
+    }
+
+    /**
+     * 递归查找指定类名的节点
+     */
+    private List<AccessibilityNodeInfo> findNodesByClassRecursive(AccessibilityNodeInfo node, String className) {
+        List<AccessibilityNodeInfo> result = new ArrayList<>();
+        if (node == null) return result;
+        
+        // 检查当前节点
+        if (className.equals(node.getClassName())) {
+            result.add(node);
+        }
+        
+        // 递归检查子节点
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null) {
+                result.addAll(findNodesByClassRecursive(child, className));
+            }
+        }
+        
+        return result;
+    }
+
+    /**
+     * 点击节点
+     */
+    public boolean clickNode(AccessibilityNodeInfo node) {
+        if (node == null) return false;
+        
+        if (node.isClickable()) {
+            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        } else {
+            // 如果节点不可点击，尝试点击其父节点
+            AccessibilityNodeInfo parent = node.getParent();
+            while (parent != null) {
+                if (parent.isClickable()) {
+                    return parent.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                }
+                parent = parent.getParent();
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * 获取节点的边界矩形
+     */
+    public Rect getNodeBounds(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        return bounds;
+    }
+
+    /**
+     * 获取节点详细信息
+     */
+    public String getNodeInfo(AccessibilityNodeInfo node) {
+        if (node == null) return "节点为空";
+        
+        StringBuilder info = new StringBuilder();
+        info.append("类名: ").append(node.getClassName()).append("\n");
+        info.append("文本: ").append(node.getText()).append("\n");
+        info.append("内容描述: ").append(node.getContentDescription()).append("\n");
+        info.append("是否可点击: ").append(node.isClickable()).append("\n");
+        info.append("是否可聚焦: ").append(node.isFocusable()).append("\n");
+        info.append("是否可见: ").append(node.isVisibleToUser()).append("\n");
+        info.append("是否已选中: ").append(node.isSelected()).append("\n");
+        info.append("是否已勾选: ").append(node.isChecked()).append("\n");
+        
+        Rect bounds = new Rect();
+        node.getBoundsInScreen(bounds);
+        info.append("屏幕坐标: ").append(bounds.toShortString()).append("\n");
+        
+        return info.toString();
+    }
+}

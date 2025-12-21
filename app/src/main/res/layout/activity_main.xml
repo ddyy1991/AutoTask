@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="AutoTask 无障碍服务工具"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:layout_marginBottom="24dp" />
+
+    <TextView
+        android:id="@+id/status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="正在检查服务状态..."
+        android:textSize="16sp"
+        android:background="#F0F0F0"
+        android:padding="12dp"
+        android:layout_marginBottom="24dp" />
+
+    <Button
+        android:id="@+id/enable_service_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="启用无障碍服务"
+        android:textSize="18sp"
+        android:layout_marginBottom="12dp" />
+
+    <Button
+        android:id="@+id/float_permission_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="请求悬浮窗权限"
+        android:textSize="18sp"
+        android:layout_marginBottom="24dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="使用说明:\n1. 点击&quot;启用无障碍服务&quot;并开启服务\n2. 点击&quot;请求悬浮窗权限&quot;并授权\n3. 返回应用查看服务状态\n4. 使用全局悬浮按钮查看页面元素信息"
+        android:textSize="14sp"
+        android:background="#E0E0E0"
+        android:padding="12dp" />
+
+</LinearLayout>

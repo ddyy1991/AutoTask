@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 悬浮窗尺寸 -->
+    <dimen name="floating_view_width">60dp</dimen>
+    <dimen name="floating_view_height">60dp</dimen>
+</resources>
