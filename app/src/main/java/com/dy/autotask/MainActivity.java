@@ -95,32 +95,37 @@ public class MainActivity extends AppCompatActivity {
         }
         AutomationTaskManager taskManager=AutomationTaskManager.getInstance();
         taskManager.setContext(this);
-        AutomationTask task = new AutomationTask("高级购物车结算任务")
-                .click("购物车", AutomationTask.ElementType.TEXT, 2000)  // 通过文本查找并点击“购物车”，超时2秒
+        AutomationTask task = new AutomationTask("打开webApp自动测试")
+                .pressHome()
+                .launchApp("com.dy.webparseutil",6000)
+                .waitFor(1000)
+                .click("com.dy.webparseutil:id/btn_async_fetch", AutomationTask.ElementType.ID, 2000)  // 通过文本查找并点击“购物车”，超时2秒
+                .waitFor(1000)
+                .inputText("com.dy.webparseutil:id/et_url","https://youzisp.tv/vodtype/zongyi.html", AutomationTask.ElementType.ID, 1500)  // 通过文本查找“结算”按钮，超时3秒
                 .waitFor(500)                                            // 等待500毫秒
-                .findElement("结算", AutomationTask.ElementType.TEXT, 3000)  // 通过文本查找“结算”按钮，超时3秒
-                .click("结算", AutomationTask.ElementType.TEXT, 2000)        // 点击“结算”按钮，超时2秒
-                .waitFor(1000)                                           // 等待1秒
-                .findElement("地址", AutomationTask.ElementType.DESCRIPTION, 3000)  // 通过描述查找地址输入框，超时3秒
-                .inputText("地址", "北京市朝阳区", AutomationTask.ElementType.TEXT, 2500)  // 通过文本查找地址输入框并输入地址，超时2.5秒
-                .swipe(100, 500, 100, 200)                              // 滑动选择配送方式
-                .tap(200, 300)                                          // 点击某个坐标
-                .longPress(150, 250, 2000)                              // 长按2秒
-                .click("确认订单", AutomationTask.ElementType.TEXT, 2000)     // 通过文本查找并点击“确认订单”按钮，超时2秒
-                .setTimeout(60000)                                       // 设置超时时间为60秒
-                .onResult((task1, status, message) -> {                  // 设置结果回调
+                .click("com.dy.webparseutil:id/btn_webview_demo", AutomationTask.ElementType.ID, 2000)        // 点击“结算”按钮，超时2秒
+                .waitFor(1500)                                           // 等待1秒
+                .inputText("com.dy.webparseutil:id/et_search","<link", AutomationTask.ElementType.ID, 3000)  // 通过描述查找地址输入框，超时3秒
+                .click("com.dy.webparseutil:id/btn_search")  // 通过文本查找地址输入框并输入地址，超时2.5秒
+                .findText("doctype html",false,5000)
+                .waitFor(1500)
+                .click("com.dy.webparseutil:id/btn_next")  // 通过文本查找地址输入框并输入地址，超时2.5秒
+                .waitFor(1500)
+                .click("com.dy.webparseutil:id/btn_next")  // 通过文本查找地址输入框并输入地址，超时2.5秒
+                .setTimeout(30000)                                       // 设置超时时间为60秒
+                .onResult((task1, status, message, stepIndex) -> {                  // 设置结果回调
                     switch (status) {
                         case SUCCESS:
-                            Log.d(TAG, "高级购物车结算任务执行成功！");
+                            Log.d(TAG, "搜索最新字符串执行完成！当前步骤: " + stepIndex);
                             break;
                         case FAILED:
-                            Log.e(TAG, "高级购物车结算任务执行失败: " + message);
+                            Log.e(TAG, "搜索最新字符串执行失败: " + message + "，当前步骤: " + stepIndex);
                             break;
                         case TIMEOUT:
-                            Log.w(TAG, "高级购物车结算任务执行超时: " + message);
+                            Log.w(TAG, "搜索最新字符串执行超时: " + message + "，当前步骤: " + stepIndex);
                             break;
                         case CANCELLED:
-                            Log.d(TAG, "高级购物车结算任务被取消: " + message);
+                            Log.d(TAG, "搜索最新字符串任务取消: " + message + "，当前步骤: " + stepIndex);
                             break;
                     }
                 });

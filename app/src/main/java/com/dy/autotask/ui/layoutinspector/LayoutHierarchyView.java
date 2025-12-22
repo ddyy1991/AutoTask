@@ -45,6 +45,11 @@ public class LayoutHierarchyView extends MultiLevelListView {
     private OnItemClickHighlightListener mOnItemClickHighlightListener;
     private NodeInfo mRootNode;
     private NodeInfo mCurrentSelectedNode; // 跟踪当前选中的节点
+    
+    // 搜索相关字段
+    private List<NodeInfo> mSearchResults = new ArrayList<>(); // 搜索结果列表
+    private int mCurrentSearchIndex = -1; // 当前搜索结果索引
+    private String mSearchKeyword = ""; // 搜索关键字
 
     public LayoutHierarchyView(Context context) {
         super(context);
@@ -93,6 +98,138 @@ public class LayoutHierarchyView extends MultiLevelListView {
             // 如果根节点没有子节点或者根节点为空，则只传递根节点本身
             mAdapter.setDataItems(Collections.singletonList(rootNodeInfo));
         }
+    }
+    
+    /**
+     * 设置搜索关键字并执行搜索
+     * @param keyword 搜索关键字
+     */
+    public void setSearchKeyword(String keyword) {
+        mSearchKeyword = keyword != null ? keyword : "";
+        mSearchResults.clear();
+        mCurrentSearchIndex = -1;
+        
+        // 如果关键字不为空，执行搜索
+        if (!mSearchKeyword.isEmpty() && mRootNode != null) {
+            searchNodes(mRootNode, mSearchKeyword);
+        }
+        
+        // 通知适配器刷新
+        mAdapter.reloadData();
+    }
+    
+    /**
+     * 在节点树中搜索匹配的节点
+     * @param node 要搜索的节点
+     * @param keyword 搜索关键字
+     */
+    private void searchNodes(NodeInfo node, String keyword) {
+        // 检查当前节点是否匹配
+        if (nodeMatchesKeyword(node, keyword)) {
+            mSearchResults.add(node);
+        }
+        
+        // 递归搜索子节点
+        for (NodeInfo child : node.getChildren()) {
+            searchNodes(child, keyword);
+        }
+    }
+    
+    /**
+     * 检查节点是否匹配搜索关键字
+     * @param node 节点
+     * @param keyword 搜索关键字
+     * @return 是否匹配
+     */
+    private boolean nodeMatchesKeyword(NodeInfo node, String keyword) {
+        // 检查节点的文本、类名、ID等属性是否包含关键字
+        if (node.getText() != null && node.getText().toLowerCase().contains(keyword.toLowerCase())) {
+            return true;
+        }
+        
+        if (node.getClassName() != null && node.getClassName().toLowerCase().contains(keyword.toLowerCase())) {
+            return true;
+        }
+        
+        if (node.getId() != null && node.getId().toLowerCase().contains(keyword.toLowerCase())) {
+            return true;
+        }
+        
+        if (node.getDesc() != null && node.getDesc().toLowerCase().contains(keyword.toLowerCase())) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 获取搜索结果数量
+     * @return 搜索结果数量
+     */
+    public int getSearchResultCount() {
+        return mSearchResults.size();
+    }
+    
+    /**
+     * 获取当前搜索结果索引
+     * @return 当前搜索结果索引
+     */
+    public int getCurrentSearchIndex() {
+        return mCurrentSearchIndex;
+    }
+    
+    /**
+     * 清除搜索状态
+     */
+    public void clearSearchStatus() {
+        mSearchResults.clear();
+        mCurrentSearchIndex = -1;
+        mSearchKeyword = "";
+        
+        // 取消所有搜索结果节点的选中状态
+        for (NodeInfo node : mSearchResults) {
+            node.setSelectedItem(false);
+        }
+        
+        // 通知适配器刷新
+        mAdapter.reloadData();
+    }
+    
+    /**
+     * 跳转到下一个搜索结果
+     * @return 是否成功跳转
+     */
+    public boolean goToNextSearchResult() {
+        if (mSearchResults.isEmpty()) {
+            return false;
+        }
+        
+        // 更新当前索引
+        int previousIndex = mCurrentSearchIndex;
+        mCurrentSearchIndex++;
+        if (mCurrentSearchIndex >= mSearchResults.size()) {
+            mCurrentSearchIndex = 0; // 循环到第一个
+        }
+        
+        // 取消之前选中节点的选中状态
+        if (previousIndex >= 0 && previousIndex < mSearchResults.size()) {
+            NodeInfo previousNode = mSearchResults.get(previousIndex);
+            previousNode.setSelectedItem(false);
+        }
+        
+        // 设置新的选中节点
+        NodeInfo currentNode = mSearchResults.get(mCurrentSearchIndex);
+        currentNode.setSelectedItem(true);
+        
+        // 通知适配器数据改变以更新UI
+        mAdapter.reloadData();
+        
+        // 通知外部显示高亮区域
+        if (mOnItemClickHighlightListener != null) {
+            mOnItemClickHighlightListener.onItemClickHighlight(currentNode.getBoundsInScreen());
+        }
+        
+        return true;
     }
 
     /**
@@ -233,14 +370,25 @@ public class LayoutHierarchyView extends MultiLevelListView {
             viewHolder.nameView.setText(nodeInfo.toString());
             viewHolder.nodeInfo = nodeInfo;
 
-            // 设置文字颜色：选中的元素显示为紫色，非选中元素显示为黑色
-            if (nodeInfo.isSelectedItem()) {
+            // 设置文字颜色和背景：根据节点的不同状态显示不同的颜色
+            if (mSearchResults.contains(nodeInfo)) {
+                // 如果是搜索结果节点
+                if (mSearchResults.indexOf(nodeInfo) == mCurrentSearchIndex) {
+                    // 当前搜索结果项 - 蓝色
+                    viewHolder.nameView.setTextColor(0xFFFFFFFF); // 白色文字
+                    convertView.setBackgroundColor(0xFF2196F3); // 蓝色背景
+                } else {
+                    // 其他搜索结果项 - 黄色
+                    viewHolder.nameView.setTextColor(0xFF000000); // 黑色文字
+                    convertView.setBackgroundColor(0xFFFFFF00); // 黄色背景
+                }
+            } else if (nodeInfo.isSelectedItem()) {
+                // 普通选中的元素显示为紫色
                 viewHolder.nameView.setTextColor(0xFF800080); // 紫色
-                // 为选中的item添加紫色描边背景
                 convertView.setBackgroundResource(R.drawable.selected_item_border);
             } else {
+                // 非选中元素显示为黑色
                 viewHolder.nameView.setTextColor(0xFF000000); // 黑色
-                // 移除非选中item的背景
                 convertView.setBackground(null);
             }
 
@@ -259,16 +407,19 @@ public class LayoutHierarchyView extends MultiLevelListView {
 
             // 为整个item view添加点击和长按监听器
             convertView.setOnClickListener(v -> {
-                // 更新选中状态
-                if (mCurrentSelectedNode != null) {
-                    mCurrentSelectedNode.setSelectedItem(false);
-                }
-                nodeInfo.setSelectedItem(true);
-                mCurrentSelectedNode = nodeInfo;
-                
-                // 通知外部显示高亮区域
-                if (mOnItemClickHighlightListener != null) {
-                    mOnItemClickHighlightListener.onItemClickHighlight(nodeInfo.getBoundsInScreen());
+                // 只有在非搜索模式下才更新普通选中状态
+                if (mSearchResults.isEmpty()) {
+                    // 更新选中状态
+                    if (mCurrentSelectedNode != null) {
+                        mCurrentSelectedNode.setSelectedItem(false);
+                    }
+                    nodeInfo.setSelectedItem(true);
+                    mCurrentSelectedNode = nodeInfo;
+                    
+                    // 通知外部显示高亮区域
+                    if (mOnItemClickHighlightListener != null) {
+                        mOnItemClickHighlightListener.onItemClickHighlight(nodeInfo.getBoundsInScreen());
+                    }
                 }
                 
                 // 通知适配器数据改变以更新UI

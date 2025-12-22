@@ -2,10 +2,22 @@ package com.dy.autotask;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.ActivityManager;
+import android.app.usage.UsageStats;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.usage.UsageStatsManager;
+import android.content.ComponentName;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.view.KeyEvent;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -28,9 +40,16 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+
+import java.lang.reflect.Method;
+import java.util.List;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.graphics.Typeface;
+
+import java.util.List;
 
 import com.dy.autotask.ui.overlay.HighlightOverlayView;
 
@@ -324,7 +343,8 @@ public class AccessibilityServiceUtil extends AccessibilityService {
             windowManager.addView(floatingView, params);
             isFloatingViewAdded = true;
             Log.d(TAG, "悬浮窗添加成功");
-            Toast.makeText(this, "悬浮窗已显示，点击蓝色按钮使用功能", Toast.LENGTH_SHORT).show();
+            // 使用通知替代Toast，避免在AccessibilityService中使用Toast的问题
+            showNotification("AutoTask", "悬浮窗已显示，点击蓝色按钮使用功能");
         } catch (Exception e) {
             Log.e(TAG, "添加悬浮窗失败: " + e.getMessage());
             isFloatingViewAdded = false;
@@ -1755,9 +1775,12 @@ public class AccessibilityServiceUtil extends AccessibilityService {
             while (System.currentTimeMillis() - startTime < timeoutMs) {
                 AccessibilityNodeInfo root = getRootInActiveWindow();
                 if (root != null) {
-                    result[0] = root.findAccessibilityNodeInfosByViewId(viewId).get(0);
-                    if (result[0] != null) {
-                        break;
+                    List<AccessibilityNodeInfo> nodes = root.findAccessibilityNodeInfosByViewId(viewId);
+                    if (!nodes.isEmpty()) {
+                        result[0] = nodes.get(0);
+                        if (result[0] != null) {
+                            break;
+                        }
                     }
                 }
                 try {
@@ -1914,22 +1937,112 @@ public class AccessibilityServiceUtil extends AccessibilityService {
     public boolean clickNode(AccessibilityNodeInfo node) {
         if (node == null) return false;
         
-        if (node.isClickable()) {
-            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-        } else {
-            // 如果节点不可点击，尝试点击其父节点
-            AccessibilityNodeInfo parent = node.getParent();
-            while (parent != null) {
-                if (parent.isClickable()) {
-                    return parent.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-                }
-                parent = parent.getParent();
+        // 在Android 7.0及以上版本使用Gesture方式点击
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            boolean gestureResult = performGestureClick(node);
+            if (gestureResult) {
+                return true;
+            } else {
+                Log.e(TAG, "使用Gesture方式点击失败");
             }
         }
         
+        // 在低版本Android或Gesture点击失败时，回退到传统点击方式
+        Log.d(TAG, "尝试使用传统方式点击");
+        
+        // 方法1: 使用performAction点击
+        if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            Log.d(TAG, "使用performAction方式点击成功");
+            return true;
+        } else {
+            Log.w(TAG, "使用performAction方式点击失败");
+        }
+        
+        // 方法2: 使用ACTION_FOCUS + ACTION_CLICK组合
+        if (node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) {
+            Log.d(TAG, "焦点设置成功");
+            if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                Log.d(TAG, "使用焦点+点击方式点击成功");
+                return true;
+            } else {
+                Log.w(TAG, "使用焦点+点击方式点击失败");
+            }
+        } else {
+            Log.w(TAG, "焦点设置失败");
+        }
+        
+        // 方法3: 查找可点击的父节点
+        AccessibilityNodeInfo parentNode = node.getParent();
+        while (parentNode != null) {
+            if (parentNode.isClickable()) {
+                if (parentNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    Log.d(TAG, "使用父节点点击方式点击成功");
+                    return true;
+                } else {
+                    Log.w(TAG, "使用父节点点击方式点击失败");
+                }
+                break;
+            }
+            parentNode = parentNode.getParent();
+        }
+        
+        Log.e(TAG, "所有点击方式都失败");
         return false;
     }
-
+        
+    /**
+     * 使用Gesture方式点击节点
+     */
+    private boolean performGestureClick(AccessibilityNodeInfo node) {
+        try {
+            // 使用反射调用Gesture API，避免编译时依赖
+            Rect bounds = new Rect();
+            node.getBoundsInScreen(bounds);
+            int centerX = bounds.centerX();
+            int centerY = bounds.centerY();
+                
+            if (centerX <= 0 || centerY <= 0) {
+                return false;
+            }
+                
+            // 获取GestureDescription类
+            Class<?> gestureDescriptionClass = Class.forName("android.view.accessibility.GestureDescription");
+            Class<?> strokeDescriptionClass = Class.forName("android.view.accessibility.GestureDescription$StrokeDescription");
+            Class<?> pathClass = Class.forName("android.graphics.Path");
+            Class<?> builderClass = Class.forName("android.view.accessibility.GestureDescription$Builder");
+                
+            // 创建Path对象
+            Object path = pathClass.newInstance();
+            Method moveToMethod = pathClass.getMethod("moveTo", float.class, float.class);
+            moveToMethod.invoke(path, (float) centerX, (float) centerY);
+                
+            // 创建StrokeDescription对象
+            Object strokeDescription = strokeDescriptionClass.getConstructor(pathClass, long.class, long.class)
+                .newInstance(path, 0L, 100L);
+                
+            // 创建Builder对象
+            Object builder = builderClass.newInstance();
+            Method addStrokeMethod = builderClass.getMethod("addStroke", strokeDescriptionClass);
+            addStrokeMethod.invoke(builder, strokeDescription);
+                
+            // 构建GestureDescription对象
+            Method buildMethod = builderClass.getMethod("build");
+            Object gesture = buildMethod.invoke(builder);
+                
+            // 调用dispatchGesture方法
+            Method dispatchGestureMethod = AccessibilityService.class.getMethod(
+                "dispatchGesture", gestureDescriptionClass, 
+                Class.forName("android.accessibilityservice.AccessibilityService$GestureResultCallback"), 
+                android.os.Handler.class);
+                
+            Object result = dispatchGestureMethod.invoke(this, gesture, null, null);
+            return result != null ? (Boolean) result : false;
+        } catch (Exception e) {
+            Log.e(TAG, "使用Gesture方式点击失败: " + e.getMessage());
+            return false;
+        }
+    }
+        
     /**
      * 获取节点的边界矩形
      */
@@ -1996,5 +2109,381 @@ public class AccessibilityServiceUtil extends AccessibilityService {
         // 注意：AccessibilityService不直接支持电源键操作
         // 这里提供一个替代方案，可以通过发送KeyEvent来实现
         return false; // 暂时不实现
+    }
+    
+    /**
+     * 启动指定包名的应用程序
+     * @param packageName 应用程序包名
+     * @return 是否启动成功
+     */
+    public boolean launchApp(String packageName) {
+        return launchApp(packageName, 2000); // 默认等待2秒
+    }
+    
+    /**
+     * 启动指定包名的应用程序
+     * @param packageName 应用程序包名
+     * @param waitTimeMs 启动后等待时间（毫秒）
+     * @return 是否启动成功
+     */
+    public boolean launchApp(String packageName, long waitTimeMs) {
+        if (packageName == null || packageName.isEmpty()) {
+            Log.e(TAG, "包名不能为空");
+            return false;
+        }
+        
+        try {
+            // 方法1: 使用标准启动Intent
+            Intent intent = getPackageManager().getLaunchIntentForPackage(packageName);
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                Log.d(TAG, "使用标准启动Intent启动应用程序: " + packageName);
+                startActivity(intent);
+                Log.d(TAG, "成功启动应用程序: " + packageName);
+                
+                // 等待一段时间让应用启动
+                if (waitTimeMs > 0) {
+                    Thread.sleep(waitTimeMs);
+                }
+                
+                return true;
+            } else {
+                Log.w(TAG, "未找到应用程序的标准启动Intent: " + packageName + ", 尝试备用方法");
+                
+                // 方法2: 使用隐式Intent
+                Intent launchIntent = new Intent(Intent.ACTION_MAIN);
+                launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+                launchIntent.setPackage(packageName);
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                
+                // 获取应用的启动Activity
+                PackageManager pm = getPackageManager();
+                List<ResolveInfo> activities = pm.queryIntentActivities(launchIntent, 0);
+                if (activities != null && !activities.isEmpty()) {
+                    ResolveInfo resolveInfo = activities.get(0); // 获取第一个启动Activity
+                    launchIntent.setComponent(new ComponentName(packageName, resolveInfo.activityInfo.name));
+                    Log.d(TAG, "使用隐式Intent启动应用程序: " + packageName + ", Activity: " + resolveInfo.activityInfo.name);
+                    startActivity(launchIntent);
+                    Log.d(TAG, "成功启动应用程序: " + packageName);
+                    
+                    // 等待一段时间让应用启动
+                    if (waitTimeMs > 0) {
+                        Thread.sleep(waitTimeMs);
+                    }
+                    
+                    return true;
+                } else {
+                    Log.e(TAG, "无法找到应用程序的启动Activity: " + packageName);
+                    
+                    // 方法3: 检查应用是否已安装
+                    try {
+                        pm.getPackageInfo(packageName, 0);
+                        Log.e(TAG, "应用已安装但无法启动: " + packageName + ", 可能被系统限制");
+                    } catch (PackageManager.NameNotFoundException e) {
+                        Log.e(TAG, "应用未安装: " + packageName);
+                    }
+                    
+                    return false;
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "启动应用程序失败: " + packageName + ", 错误: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+    
+    /**
+     * 等待应用程序启动完成
+     * @param packageName 应用程序包名
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 是否启动完成
+     */
+    private boolean waitForAppLaunch(String packageName, long timeoutMs) {
+        try {
+            long startTime = System.currentTimeMillis();
+            while (System.currentTimeMillis() - startTime < timeoutMs) {
+                // 获取当前前台应用的包名
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    // 检查是否具有USAGE_STATS权限
+                    UsageStatsManager usageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+                    long currentTime = System.currentTimeMillis();
+                    List<UsageStats> stats = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, currentTime - 1000 * 10, currentTime);
+                    if (stats != null) {
+                        SortedMap<Long, UsageStats> mySortedMap = new TreeMap<>();
+                        for (UsageStats usageStats : stats) {
+                            mySortedMap.put(usageStats.getLastTimeUsed(), usageStats);
+                        }
+                        if (!mySortedMap.isEmpty()) {
+                            String currentPackage = mySortedMap.get(mySortedMap.lastKey()).getPackageName();
+                            Log.d(TAG, "当前前台应用: " + currentPackage + ", 目标应用: " + packageName);
+                            if (packageName.equals(currentPackage)) {
+                                Log.d(TAG, "应用程序启动完成: " + packageName);
+                                return true;
+                            }
+                        } else {
+                            Log.d(TAG, "未获取到应用使用统计信息");
+                        }
+                    } else {
+                        Log.d(TAG, "无法获取应用使用统计信息，可能缺少USAGE_STATS权限");
+                    }
+                } else {
+                    // 对于较低版本的Android，使用ActivityManager
+                    ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+                    List<ActivityManager.RunningTaskInfo> taskInfo = am.getRunningTasks(1);
+                    if (!taskInfo.isEmpty()) {
+                        ComponentName componentInfo = taskInfo.get(0).topActivity;
+                        if (componentInfo != null) {
+                            String currentPackage = componentInfo.getPackageName();
+                            Log.d(TAG, "当前运行任务应用: " + currentPackage + ", 目标应用: " + packageName);
+                            if (packageName.equals(currentPackage)) {
+                                Log.d(TAG, "应用程序启动完成: " + packageName);
+                                return true;
+                            }
+                        }
+                    }
+                }
+                
+                // 等待一小段时间后重试
+                Thread.sleep(500);
+            }
+            
+            Log.w(TAG, "等待应用程序启动超时: " + packageName);
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "等待应用程序启动时发生错误: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * 清理后台应用程序（不清理自身）
+     * @return 是否清理成功
+     */
+    public boolean clearRecentApps() {
+        try {
+            // 先执行Home键操作，回到主屏幕
+            boolean homeSuccess = performGlobalAction(GLOBAL_ACTION_HOME);
+            if (homeSuccess) {
+                Log.d(TAG, "已回到主屏幕");
+                // 等待一段时间确保回到主屏幕
+                Thread.sleep(500);
+                
+                // 执行全局动作：显示最近任务
+                boolean recentSuccess = performGlobalAction(GLOBAL_ACTION_RECENTS);
+                if (recentSuccess) {
+                    Log.d(TAG, "已打开最近任务列表");
+                    // 等待一段时间让最近任务列表显示
+                    Thread.sleep(500);
+                    
+                    // 执行全局动作：按下返回键，关闭最近任务列表
+                    performGlobalAction(GLOBAL_ACTION_BACK);
+                    Log.d(TAG, "已清理后台应用程序");
+                    return true;
+                } else {
+                    Log.e(TAG, "无法执行显示最近任务操作");
+                    return false;
+                }
+            } else {
+                Log.e(TAG, "无法执行Home键操作");
+                return false;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "清理后台应用程序失败: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * 查找文本（支持单个文本）
+     * @param text 要查找的文本
+     * @param exactMatch 是否精确匹配
+     * @return 是否找到文本
+     */
+    public boolean findText(String text, boolean exactMatch) {
+        return findText(new String[]{text}, exactMatch, 5000); // 默认超时5秒
+    }
+    
+    /**
+     * 查找文本（支持单个文本）
+     * @param text 要查找的文本
+     * @param exactMatch 是否精确匹配
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 是否找到文本
+     */
+    public boolean findText(String text, boolean exactMatch, long timeoutMs) {
+        return findText(new String[]{text}, exactMatch, timeoutMs);
+    }
+    
+    /**
+     * 查找文本（支持多个文本）
+     * @param texts 要查找的文本数组
+     * @param exactMatch 是否精确匹配
+     * @return 是否找到所有文本
+     */
+    public boolean findText(String[] texts, boolean exactMatch) {
+        return findText(texts, exactMatch, 5000); // 默认超时5秒
+    }
+    
+    /**
+     * 查找文本（支持多个文本）
+     * @param texts 要查找的文本数组
+     * @param exactMatch 是否精确匹配
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 是否找到所有文本
+     */
+    public boolean findText(String[] texts, boolean exactMatch, long timeoutMs) {
+        try {
+            long startTime = System.currentTimeMillis();
+            while (System.currentTimeMillis() - startTime < timeoutMs) {
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root == null) {
+                    Log.e(TAG, "无法获取根节点");
+                    Thread.sleep(100); // 等待100毫秒后重试
+                    continue;
+                }
+                
+                if (findTextInNode(root, texts, exactMatch)) {
+                    return true;
+                }
+                
+                Thread.sleep(100); // 等待100毫秒后重试
+            }
+            
+            Log.w(TAG, "查找文本超时: " + timeoutMs + "ms");
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "查找文本失败: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * 在节点中递归查找文本
+     * @param node 节点
+     * @param texts 要查找的文本数组
+     * @param exactMatch 是否精确匹配
+     * @return 是否找到所有文本
+     */
+    private boolean findTextInNode(AccessibilityNodeInfo node, String[] texts, boolean exactMatch) {
+        if (node == null) {
+            return false;
+        }
+        
+        // 创建一个布尔数组来跟踪每个文本是否已找到
+        boolean[] foundFlags = new boolean[texts.length];
+        
+        // 检查当前节点的文本
+        CharSequence nodeText = node.getText();
+        if (nodeText != null) {
+            String textStr = nodeText.toString();
+            checkTextMatches(textStr, texts, exactMatch, foundFlags);
+        }
+        
+        // 检查当前节点的内容描述
+        CharSequence contentDescription = node.getContentDescription();
+        if (contentDescription != null) {
+            String descStr = contentDescription.toString();
+            checkTextMatches(descStr, texts, exactMatch, foundFlags);
+        }
+        
+        // 检查是否所有文本都已找到
+        boolean allFound = true;
+        for (boolean found : foundFlags) {
+            if (!found) {
+                allFound = false;
+                break;
+            }
+        }
+        
+        if (allFound) {
+            return true;
+        }
+        
+        // 递归检查子节点
+        int childCount = node.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            AccessibilityNodeInfo child = node.getChild(i);
+            if (child != null && findTextInNode(child, texts, exactMatch)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 检查文本是否匹配
+     * @param sourceText 源文本
+     * @param targetTexts 目标文本数组
+     * @param exactMatch 是否精确匹配
+     * @param foundFlags 匹配标志数组
+     */
+    private void checkTextMatches(String sourceText, String[] targetTexts, boolean exactMatch, boolean[] foundFlags) {
+        for (int i = 0; i < targetTexts.length; i++) {
+            if (!foundFlags[i]) { // 如果还没有找到，则检查
+                if (exactMatch) {
+                    if (sourceText.equals(targetTexts[i])) {
+                        foundFlags[i] = true;
+                    }
+                } else {
+                    if (sourceText.contains(targetTexts[i])) {
+                        foundFlags[i] = true;
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * 显示通知
+     * @param title 通知标题
+     * @param content 通知内容
+     */
+    public void showNotification(String title, String content) {
+        try {
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            
+            // 创建通知渠道（Android 8.0及以上）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = new NotificationChannel(
+                    "autotask_channel",
+                    "AutoTask Notifications",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                );
+                channel.setDescription("AutoTask service notifications");
+                notificationManager.createNotificationChannel(channel);
+            }
+            
+            // 创建通知
+            Notification.Builder builder;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                builder = new Notification.Builder(this, "autotask_channel");
+            } else {
+                builder = new Notification.Builder(this);
+            }
+            
+            builder.setContentTitle(title)
+                   .setContentText(content)
+                   .setSmallIcon(android.R.drawable.ic_dialog_info)
+                   .setAutoCancel(true);
+            
+            // 添加点击意图
+            Intent intent = new Intent(this, MainActivity.class);
+            PendingIntent pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            );
+            builder.setContentIntent(pendingIntent);
+            
+            // 显示通知
+            notificationManager.notify(1, builder.build());
+        } catch (Exception e) {
+            Log.e(TAG, "显示通知失败: " + e.getMessage());
+            // 如果通知失败，回退到日志记录
+            Log.d(TAG, "通知内容: " + title + " - " + content);
+        }
     }
 }
