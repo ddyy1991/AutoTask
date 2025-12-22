@@ -37,6 +37,9 @@ public class AutomationTask implements Runnable {
     // 任务超时时间（毫秒）
     private long timeoutMs = 30000; // 默认30秒
     
+    // 当前执行的步骤索引
+    private int currentStepIndex = 0;
+    
     // 任务管理器引用
     private AutomationTaskManager taskManager;
     
@@ -211,6 +214,58 @@ public class AutomationTask implements Runnable {
     }
     
     /**
+     * 链式调用：查找文本（支持单个文本）
+     * @param text 要查找的文本
+     * @param exactMatch 是否精确匹配
+     * @return 当前任务实例
+     */
+    public AutomationTask findText(String text, boolean exactMatch) {
+        return findText(text, exactMatch, 5000); // 默认超时5秒
+    }
+    
+    /**
+     * 链式调用：查找文本（支持单个文本）
+     * @param text 要查找的文本
+     * @param exactMatch 是否精确匹配
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 当前任务实例
+     */
+    public AutomationTask findText(String text, boolean exactMatch, long timeoutMs) {
+        String findTextData = text + "|" + exactMatch + "|" + timeoutMs;
+        actions.add(new TaskAction(TaskActionType.FIND_TEXT, findTextData, ElementType.TEXT, timeoutMs));
+        return this;
+    }
+    
+    /**
+     * 链式调用：查找文本（支持多个文本）
+     * @param texts 要查找的文本数组
+     * @param exactMatch 是否精确匹配
+     * @return 当前任务实例
+     */
+    public AutomationTask findText(String[] texts, boolean exactMatch) {
+        return findText(texts, exactMatch, 5000); // 默认超时5秒
+    }
+    
+    /**
+     * 链式调用：查找文本（支持多个文本）
+     * @param texts 要查找的文本数组
+     * @param exactMatch 是否精确匹配
+     * @param timeoutMs 超时时间（毫秒）
+     * @return 当前任务实例
+     */
+    public AutomationTask findText(String[] texts, boolean exactMatch, long timeoutMs) {
+        // 将文本数组转换为字符串，用分隔符连接
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < texts.length; i++) {
+            if (i > 0) sb.append(";");
+            sb.append(texts[i]);
+        }
+        String findTextData = sb.toString() + "|" + exactMatch + "|" + timeoutMs;
+        actions.add(new TaskAction(TaskActionType.FIND_TEXT, findTextData, ElementType.TEXT, timeoutMs));
+        return this;
+    }
+    
+    /**
      * 链式调用：点击菜单键
      * @return 当前任务实例
      */
@@ -243,6 +298,36 @@ public class AutomationTask implements Runnable {
      */
     public AutomationTask pressPower() {
         actions.add(new TaskAction(TaskActionType.PRESS_POWER, ""));
+        return this;
+    }
+    
+    /**
+     * 链式调用：启动应用程序
+     * @param packageName 应用程序包名
+     * @return 当前任务实例
+     */
+    public AutomationTask launchApp(String packageName) {
+        return launchApp(packageName, 2000); // 默认等待2秒
+    }
+    
+    /**
+     * 链式调用：启动应用程序
+     * @param packageName 应用程序包名
+     * @param waitTimeMs 启动后等待时间（毫秒）
+     * @return 当前任务实例
+     */
+    public AutomationTask launchApp(String packageName, long waitTimeMs) {
+        String data = packageName + "|" + waitTimeMs;
+        actions.add(new TaskAction(TaskActionType.LAUNCH_APP, data));
+        return this;
+    }
+    
+    /**
+     * 链式调用：清理后台应用程序（不清理自身）
+     * @return 当前任务实例
+     */
+    public AutomationTask clearRecentApps() {
+        actions.add(new TaskAction(TaskActionType.CLEAR_RECENT_APPS, ""));
         return this;
     }
     
@@ -351,6 +436,11 @@ public class AutomationTask implements Runnable {
     private void executeAction(TaskAction action) throws Exception {
         Log.d(TAG, "执行操作: " + action.getType() + ", 参数: " + action.getData());
         
+        // 更新当前步骤索引（排除setTimeout操作）
+        if (shouldCountAsStep(action.getType())) {
+            currentStepIndex++;
+        }
+        
         // 添加到任务管理器日志
         if (taskManager != null) {
             mainHandler.post(() -> {
@@ -397,6 +487,15 @@ public class AutomationTask implements Runnable {
                 break;
             case PRESS_POWER:
                 executePressPowerAction(action);
+                break;
+            case LAUNCH_APP:
+                executeLaunchAppAction(action);
+                break;
+            case CLEAR_RECENT_APPS:
+                executeClearRecentAppsAction(action);
+                break;
+            case FIND_TEXT:
+                executeFindTextAction(action);
                 break;
             default:
                 throw new UnsupportedOperationException("不支持的操作类型: " + action.getType());
@@ -694,6 +793,130 @@ public class AutomationTask implements Runnable {
     }
     
     /**
+     * 执行启动应用程序操作
+     */
+    private void executeLaunchAppAction(TaskAction action) throws Exception {
+        String data = action.getData();
+        String packageName;
+        long waitTimeMs = 2000; // 默认等待2秒
+        
+        // 解析包名和等待时间
+        if (data.contains("|")) {
+            String[] parts = data.split("\\|");
+            packageName = parts[0];
+            if (parts.length > 1) {
+                try {
+                    waitTimeMs = Long.parseLong(parts[1]);
+                } catch (NumberFormatException e) {
+                    Log.w(TAG, "无效的等待时间格式，使用默认值: " + parts[1]);
+                }
+            }
+        } else {
+            packageName = data;
+        }
+        
+        Log.d(TAG, "启动应用程序: " + packageName + ", 等待时间: " + waitTimeMs + "ms");
+        
+        // 添加到任务管理器日志
+        if (taskManager != null) {
+            final String logMessage = "启动应用程序: " + packageName + ", 等待时间: " + waitTimeMs + "ms";
+            mainHandler.post(() -> {
+                taskManager.addLog(logMessage);
+            });
+        }
+        
+        boolean success = accessibilityService.launchApp(packageName, waitTimeMs);
+        if (!success) {
+            throw new RuntimeException("启动应用程序失败: " + packageName);
+        } else {
+            // 添加成功日志
+            if (taskManager != null) {
+                mainHandler.post(() -> {
+                    taskManager.addLog("启动应用程序成功: " + packageName);
+                });
+            }
+        }
+    }
+    
+    /**
+     * 执行清理后台应用程序操作
+     */
+    private void executeClearRecentAppsAction(TaskAction action) throws Exception {
+        Log.d(TAG, "清理后台应用程序");
+        
+        // 添加到任务管理器日志
+        if (taskManager != null) {
+            mainHandler.post(() -> {
+                taskManager.addLog("清理后台应用程序");
+            });
+        }
+        
+        boolean success = accessibilityService.clearRecentApps();
+        if (!success) {
+            throw new RuntimeException("清理后台应用程序失败");
+        } else {
+            // 添加成功日志
+            if (taskManager != null) {
+                mainHandler.post(() -> {
+                    taskManager.addLog("清理后台应用程序成功");
+                });
+            }
+        }
+    }
+    
+    /**
+     * 执行查找文本操作
+     */
+    private void executeFindTextAction(TaskAction action) throws Exception {
+        Log.d(TAG, "执行查找文本操作");
+        
+        // 解析操作数据
+        String data = action.getData();
+        String[] parts = data.split("\\|");
+        if (parts.length < 2) {
+            throw new IllegalArgumentException("无效的查找文本数据格式");
+        }
+        
+        // 解析文本数组
+        String[] texts;
+        if (parts[0].contains(";")) {
+            texts = parts[0].split(";");
+        } else {
+            texts = new String[]{parts[0]};
+        }
+        
+        boolean exactMatch = Boolean.parseBoolean(parts[1]);
+        long timeoutMs = parts.length > 2 ? Long.parseLong(parts[2]) : action.getTimeoutMs();
+        
+        // 添加到任务管理器日志
+        if (taskManager != null) {
+            mainHandler.post(() -> {
+                StringBuilder logMsg = new StringBuilder("查找文本: [");
+                for (int i = 0; i < texts.length; i++) {
+                    if (i > 0) logMsg.append(", ");
+                    logMsg.append(texts[i]);
+                }
+                logMsg.append("] 匹配模式: ").append(exactMatch ? "精确匹配" : "模糊匹配")
+                      .append(" 超时: ").append(timeoutMs).append("ms");
+                taskManager.addLog(logMsg.toString());
+            });
+        }
+        
+        // 执行查找文本操作
+        boolean found = accessibilityService.findText(texts, exactMatch, timeoutMs);
+        if (!found) {
+            throw new RuntimeException("未找到指定文本: " + parts[0]);
+        } else {
+            // 添加成功日志
+            if (taskManager != null) {
+                mainHandler.post(() -> {
+                    taskManager.addLog("找到指定文本");
+                });
+            }
+        }
+    }
+    
+    /**
      * 根据元素类型查找节点
      */
     private AccessibilityNodeInfo findNodeByType(String elementId, ElementType elementType, long timeoutMs) throws Exception {
@@ -735,6 +958,17 @@ public class AutomationTask implements Runnable {
      */
     public TaskStatus getStatus() {
         return status;
+    }
+    
+    /**
+     * 判断操作是否应该计入步骤索引
+     * @param type 操作类型
+     * @return 是否计入步骤索引
+     */
+    private boolean shouldCountAsStep(TaskActionType type) {
+        // 所有添加到actions列表中的操作都应该计入步骤索引
+        // setTimeout等只设置属性的方法不添加到actions列表中，所以这里总是返回true
+        return true;
     }
     
     /**
@@ -788,7 +1022,7 @@ public class AutomationTask implements Runnable {
         // 添加到任务管理器日志
         if (taskManager != null) {
             mainHandler.post(() -> {
-                taskManager.addLog("任务 '" + taskName + "' 状态: " + message);
+                taskManager.addLog("任务 '" + taskName + "' 状态: " + message+",步骤：第"+currentStepIndex+"步");
             });
         }
         
@@ -805,7 +1039,7 @@ public class AutomationTask implements Runnable {
         // 在主线程中回调结果
         mainHandler.post(() -> {
             if (resultCallback != null) {
-                resultCallback.onTaskResult(this, status, message);
+                resultCallback.onTaskResult(this, status, message, currentStepIndex);
             }
         });
     }
@@ -836,7 +1070,10 @@ public class AutomationTask implements Runnable {
         PRESS_MENU,     // 点击菜单键
         PRESS_HOME,     // 点击Home键
         PRESS_BACK,     // 点击返回键
-        PRESS_POWER     // 点击电源键
+        PRESS_POWER,    // 点击电源键
+        LAUNCH_APP,     // 启动应用程序
+        CLEAR_RECENT_APPS, // 清理后台应用
+        FIND_TEXT       // 查找文本
     }
     
     /**
@@ -909,7 +1146,8 @@ public class AutomationTask implements Runnable {
          * @param task 任务对象
          * @param status 任务状态
          * @param message 状态消息
+         * @param stepIndex 当前步骤索引（从1开始）
          */
-        void onTaskResult(AutomationTask task, TaskStatus status, String message);
+        void onTaskResult(AutomationTask task, TaskStatus status, String message, int stepIndex);
     }
 }

@@ -3,6 +3,8 @@ package com.dy.autotask.task;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
 import android.util.Log;
@@ -33,6 +35,9 @@ public class TaskLogFloatingWindow {
 
     private boolean isShowing = false;
     private boolean isEnabled = true; // 全局配置是否展示日志框
+    
+    // 用于在主线程中更新UI
+    private Handler mainHandler = new Handler(Looper.getMainLooper());
     
     // 用于拖动的变量
     private int initialX;
@@ -137,43 +142,46 @@ public class TaskLogFloatingWindow {
      * @param color 颜色
      */
     public void addColoredLog(String message, int color) {
-        // 如果悬浮窗未启用，则不添加日志
-        if (!isEnabled) {
-            return;
-        }
-        
-        // 如果悬浮窗未显示，尝试显示它
-        if (!isShowing) {
-            show();
-        }
-        
-        try {
-            String timestamp = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
-            String logEntry = "[" + timestamp + "] " + message + "\n";
-            
-            CharSequence currentText = logTextView.getText();
-            String newText = logEntry + currentText;
-            
-            // 限制日志行数，避免过多占用内存
-            String[] lines = newText.split("\n");
-            if (lines.length > 100) {
-                StringBuilder sb = new StringBuilder();
-                for (int i = 0; i < 100; i++) {
-                    sb.append(lines[i]).append("\n");
-                }
-                newText = sb.toString();
+        // 使用Handler确保UI更新在主线程中进行
+        mainHandler.post(() -> {
+            // 如果悬浮窗未启用，则不添加日志
+            if (!isEnabled) {
+                return;
             }
             
-            // 创建带颜色的文本
-            SpannableString spannableString = new SpannableString(newText);
-            // 为新添加的日志行设置颜色
-            spannableString.setSpan(new ForegroundColorSpan(color), 0, logEntry.length(), 0);
+            // 如果悬浮窗未显示，尝试显示它
+            if (!isShowing) {
+                show();
+            }
             
-            logTextView.setText(spannableString);
-            Log.d(TAG, "添加日志: " + message);
-        } catch (Exception e) {
-            Log.e(TAG, "添加日志失败: " + e.getMessage());
-        }
+            try {
+                String timestamp = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
+                String logEntry = "[" + timestamp + "] " + message + "\n";
+                
+                CharSequence currentText = logTextView.getText();
+                String newText = logEntry + currentText;
+                
+                // 限制日志行数，避免过多占用内存
+                String[] lines = newText.split("\n");
+                if (lines.length > 100) {
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < 100; i++) {
+                        sb.append(lines[i]).append("\n");
+                    }
+                    newText = sb.toString();
+                }
+                
+                // 创建带颜色的文本
+                SpannableString spannableString = new SpannableString(newText);
+                // 为新添加的日志行设置颜色
+                spannableString.setSpan(new ForegroundColorSpan(color), 0, logEntry.length(), 0);
+                
+                logTextView.setText(spannableString);
+                Log.d(TAG, "添加日志: " + message);
+            } catch (Exception e) {
+                Log.e(TAG, "添加日志失败: " + e.getMessage());
+            }
+        });
     }
     
     /**

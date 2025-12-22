@@ -1,9 +1,11 @@
-package com.dy.autotask.task;
+package com.dy.autotask.test_example;
 
 import android.content.Context;
 import android.util.Log;
 
 import com.dy.autotask.AccessibilityServiceUtil;
+import com.dy.autotask.task.AutomationTask;
+import com.dy.autotask.task.AutomationTaskManager;
 
 /**
  * 任务系统使用示例
@@ -35,8 +37,8 @@ public class TaskUsageExample {
                 .inputText("password_input", "test_password")   // 输入密码（默认使用ID类型，超时1.5秒）
                 .click("submit_button")                          // 点击提交按钮（默认使用ID类型，超时1.5秒）
                 .setTimeout(30000)                               // 设置任务超时时间为30秒
-                .onResult((task1, status, message) -> {          // 设置结果回调
-                    Log.d(TAG, "任务 '" + task1.getTaskName() + "' 执行结果: " + message);
+                .onResult((task1, status, message, stepIndex) -> {          // 设置结果回调
+                    Log.d(TAG, "任务 '" + task1.getTaskName() + "' 执行结果: " + message + "，当前步骤: " + stepIndex);
                 });
         
         // 创建一个使用新功能的任务
@@ -47,8 +49,8 @@ public class TaskUsageExample {
                 .inputText("用户名输入框", "test_user", AutomationTask.ElementType.DESCRIPTION, 2500)  // 通过描述查找输入框并输入用户名，超时2.5秒
                 .click("100,200", AutomationTask.ElementType.COORDINATES, 1500)  // 点击坐标(100,200)，超时1.5秒
                 .setTimeout(30000)                                     // 设置任务超时时间为30秒
-                .onResult((task1, status, message) -> {                // 设置结果回调
-                    Log.d(TAG, "任务 '" + task1.getTaskName() + "' 执行结果: " + message);
+                .onResult((task1, status, message, stepIndex) -> {                // 设置结果回调
+                    Log.d(TAG, "任务 '" + task1.getTaskName() + "' 执行结果: " + message + "，当前步骤: " + stepIndex);
                 });
         
         // 设置无障碍服务引用
@@ -88,19 +90,19 @@ public class TaskUsageExample {
                 .longPress(150, 250, 2000)                      // 长按2秒
                 .click("confirm_order_button")                   // 点击确认订单按钮（默认使用ID类型，超时1.5秒）
                 .setTimeout(60000)                               // 设置超时时间为60秒
-                .onResult((task1, status, message) -> {          // 设置结果回调
+                .onResult((task1, status, message, stepIndex) -> {          // 设置结果回调
                     switch (status) {
                         case SUCCESS:
-                            Log.d(TAG, "购物车结算任务执行成功！");
+                            Log.d(TAG, "购物车结算任务执行成功！当前步骤: " + stepIndex);
                             break;
                         case FAILED:
-                            Log.e(TAG, "购物车结算任务执行失败: " + message);
+                            Log.e(TAG, "购物车结算任务执行失败: " + message + "，当前步骤: " + stepIndex);
                             break;
                         case TIMEOUT:
-                            Log.w(TAG, "购物车结算任务执行超时: " + message);
+                            Log.w(TAG, "购物车结算任务执行超时: " + message + "，当前步骤: " + stepIndex);
                             break;
                         case CANCELLED:
-                            Log.d(TAG, "购物车结算任务被取消: " + message);
+                            Log.d(TAG, "购物车结算任务被取消: " + message + "，当前步骤: " + stepIndex);
                             break;
                     }
                 });
@@ -119,19 +121,19 @@ public class TaskUsageExample {
                 .longPress(150, 250, 2000)                              // 长按2秒
                 .click("确认订单", AutomationTask.ElementType.TEXT, 2000)     // 通过文本查找并点击“确认订单”按钮，超时2秒
                 .setTimeout(60000)                                       // 设置超时时间为60秒
-                .onResult((task1, status, message) -> {                  // 设置结果回调
+                .onResult((task1, status, message, stepIndex) -> {                  // 设置结果回调
                     switch (status) {
                         case SUCCESS:
-                            Log.d(TAG, "高级购物车结算任务执行成功！");
+                            Log.d(TAG, "高级购物车结算任务执行成功！当前步骤: " + stepIndex);
                             break;
                         case FAILED:
-                            Log.e(TAG, "高级购物车结算任务执行失败: " + message);
+                            Log.e(TAG, "高级购物车结算任务执行失败: " + message + "，当前步骤: " + stepIndex);
                             break;
                         case TIMEOUT:
-                            Log.w(TAG, "高级购物车结算任务执行超时: " + message);
+                            Log.w(TAG, "高级购物车结算任务执行超时: " + message + "，当前步骤: " + stepIndex);
                             break;
                         case CANCELLED:
-                            Log.d(TAG, "高级购物车结算任务被取消: " + message);
+                            Log.d(TAG, "高级购物车结算任务被取消: " + message + "，当前步骤: " + stepIndex);
                             break;
                     }
                 });
@@ -162,31 +164,31 @@ public class TaskUsageExample {
         // 创建几个任务
         AutomationTask task1 = new AutomationTask("任务1")
                 .waitFor(2000)
-                .onResult((task, status, message) -> 
-                    Log.d(TAG, "任务1完成: " + message));
+                .onResult((task, status, message, stepIndex) -> 
+                    Log.d(TAG, "任务1完成: " + message + "，当前步骤: " + stepIndex));
         
         AutomationTask task2 = new AutomationTask("任务2")
                 .waitFor(3000)
-                .onResult((task, status, message) -> 
-                    Log.d(TAG, "任务2完成: " + message));
+                .onResult((task, status, message, stepIndex) -> 
+                    Log.d(TAG, "任务2完成: " + message + "，当前步骤: " + stepIndex));
         
         AutomationTask task3 = new AutomationTask("任务3")
                 .waitFor(1000)
-                .onResult((task, status, message) -> 
-                    Log.d(TAG, "任务3完成: " + message));
+                .onResult((task, status, message, stepIndex) -> 
+                    Log.d(TAG, "任务3完成: " + message + "，当前步骤: " + stepIndex));
         
         // 创建使用新功能的任务
         AutomationTask advancedTask1 = new AutomationTask("高级任务1")
                 .click("按钮1", AutomationTask.ElementType.TEXT, 2000)  // 通过文本查找并点击按钮，超时2秒
                 .waitFor(1500)
-                .onResult((task, status, message) -> 
-                    Log.d(TAG, "高级任务1完成: " + message));
+                .onResult((task, status, message, stepIndex) -> 
+                    Log.d(TAG, "高级任务1完成: " + message + "，当前步骤: " + stepIndex));
         
         AutomationTask advancedTask2 = new AutomationTask("高级任务2")
                 .findElement("输入框1", AutomationTask.ElementType.DESCRIPTION, 3000)  // 通过描述查找输入框，超时3秒
                 .inputText("输入框1", "测试文本", AutomationTask.ElementType.DESCRIPTION, 2500)  // 通过描述查找输入框并输入文本，超时2.5秒
-                .onResult((task, status, message) -> 
-                    Log.d(TAG, "高级任务2完成: " + message));
+                .onResult((task, status, message, stepIndex) -> 
+                    Log.d(TAG, "高级任务2完成: " + message + "，当前步骤: " + stepIndex));
         
         // 创建包含按键操作的任务
         AutomationTask keyTask = new AutomationTask("按键操作任务")
@@ -197,8 +199,8 @@ public class TaskUsageExample {
                 .pressBack()                                 // 点击返回键
                 .waitFor(1000)                               // 等待1秒
                 .pressHome()                                 // 点击Home键
-                .onResult((task, status, message) -> 
-                    Log.d(TAG, "按键操作任务完成: " + message));
+                .onResult((task, status, message, stepIndex) -> 
+                    Log.d(TAG, "按键操作任务完成: " + message + "，当前步骤: " + stepIndex));
         
         // 设置无障碍服务引用
         task1.setAccessibilityService(accessibilityService);
