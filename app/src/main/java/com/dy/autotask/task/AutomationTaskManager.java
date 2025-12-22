@@ -171,15 +171,30 @@ public class AutomationTaskManager {
      * @return 颜色值
      */
     private int getColorForMessage(String message) {
-        if (message.contains("失败") || message.contains("FAILED")) {
+        if (message == null) return 0xFFFFFFFF; // 白色
+        
+        // 任务失败 - 红色
+        if (message.contains("失败") || message.contains("FAILED") || message.contains("错误")) {
             return 0xFFFF0000; // 红色
-        } else if (message.contains("开始执行任务") || message.contains("任务执行中")) {
-            return 0xFF00FF00; // 绿色
-        } else if (message.contains("超时") || message.contains("TIMEOUT")) {
-            return 0xFFFFFF00; // 黄色
-        } else {
-            return 0xFFFFFFFF; // 白色
         }
+        
+        // 任务超时 - 黄色
+        if (message.contains("超时") || message.contains("TIMEOUT")) {
+            return 0xFFFFFF00; // 黄色
+        }
+        
+        // 任务成功 - 绿色
+        if (message.contains("成功") || message.contains("SUCCESS") || message.contains("完成")) {
+            return 0xFF00FF00; // 绿色
+        }
+        
+        // 任务开始 - 橙色
+        if (message.contains("开始执行任务") || message.contains("启动应用程序")) {
+            return 0xFFFFA500; // 橙色
+        }
+        
+        // 默认颜色 - 白色
+        return 0xFFFFFFFF; // 白色
     }
     
     /**

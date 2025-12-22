@@ -193,6 +193,47 @@ public class TaskLogFloatingWindow {
     }
     
     /**
+     * 根据日志内容自动选择颜色
+     * @param message 日志消息
+     * @return 颜色值
+     */
+    private int getLogColor(String message) {
+        if (message == null) return COLOR_DEFAULT;
+        
+        // 任务开始
+        if (message.contains("开始执行任务") || message.contains("启动应用程序")) {
+            return COLOR_START;
+        }
+        
+        // 任务成功
+        if (message.contains("成功") || message.contains("完成")) {
+            return COLOR_SUCCESS;
+        }
+        
+        // 任务超时
+        if (message.contains("超时")) {
+            return COLOR_TIMEOUT;
+        }
+        
+        // 任务失败
+        if (message.contains("失败") || message.contains("错误")) {
+            return COLOR_FAILED;
+        }
+        
+        // 默认颜色
+        return COLOR_DEFAULT;
+    }
+    
+    /**
+     * 添加自动着色的日志信息
+     * @param message 日志信息
+     */
+    public void addAutoColoredLog(String message) {
+        int color = getLogColor(message);
+        addColoredLog(message, color);
+    }
+    
+    /**
      * 清空日志
      */
     public void clearLog() {
