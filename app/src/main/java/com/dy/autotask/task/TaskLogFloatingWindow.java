@@ -7,6 +7,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
+import android.graphics.Color;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -27,6 +28,13 @@ import java.util.Locale;
  */
 public class TaskLogFloatingWindow {
     private static final String TAG = "TaskLogFloatingWindow";
+    
+    // 日志颜色常量
+    private static final int COLOR_START = Color.parseColor("#FFA500"); // 橙色 - 任务开始
+    private static final int COLOR_SUCCESS = Color.GREEN; // 绿色 - 任务成功
+    private static final int COLOR_TIMEOUT = Color.YELLOW; // 黄色 - 任务超时
+    private static final int COLOR_FAILED = Color.RED; // 红色 - 任务失败
+    private static final int COLOR_DEFAULT = Color.WHITE; // 白色 - 默认颜色
     
     private Context context;
     private WindowManager windowManager;
