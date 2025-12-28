@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\n删除项目中的测试文件\n\n移除test_example文件夹下的所有示例和测试文件：\n- AppLaunchTest.java\n- ClickCompatibilityTest.java\n- ClickExample.java\n- FindTextExample.java\n- LaunchAppExample.java\n- TaskUsageExample.java\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}
