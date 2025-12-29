@@ -220,28 +220,35 @@ public class NodeInfo {
         if (simplifiedName == null) {
             simplifiedName = "Unknown";
         }
-        
-        // 对于TextView类型，添加文本值显示
+
         StringBuilder result = new StringBuilder(simplifiedName);
-        
-        // 检查是否为TextView及其子类
-        if (className != null && (className.equals("android.widget.TextView") || 
-                className.endsWith(".TextView"))) {
-            if (text != null && !text.isEmpty()) {
-                // 限制文本长度为5个字符，超过则用...表示
-                String displayText = text;
-                if (displayText.length() > 5) {
-                    displayText = displayText.substring(0, 5) + "...";
-                }
-                result.append("[").append(displayText).append("]");
+
+        // 添加文本或描述信息
+        String contentInfo = null;
+
+        // 优先显示文本内容
+        if (text != null && !text.isEmpty()) {
+            contentInfo = text;
+        }
+        // 如果没有文本，显示描述（ContentDescription）
+        else if (desc != null && !desc.isEmpty()) {
+            contentInfo = desc;
+        }
+
+        // 限制显示长度，超过10个字符则用...表示
+        if (contentInfo != null) {
+            if (contentInfo.length() > 10) {
+                contentInfo = contentInfo.substring(0, 10) + "...";
             }
+            result.append("[").append(contentInfo).append("]");
         }
-        
-        // 只有当有子View时才显示子View个数
-        if (getChildCount() > 0) {
-            result.append("(").append(getChildCount()).append(")");
+
+        // 显示子View个数
+        int childCount = getChildCount();
+        if (childCount > 0) {
+            result.append(" (").append(childCount).append(")");
         }
-        
+
         return result.toString();
     }
 }

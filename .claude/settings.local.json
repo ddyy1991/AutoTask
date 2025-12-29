@@ -2,7 +2,33 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\n删除项目中的测试文件\n\n移除test_example文件夹下的所有示例和测试文件：\n- AppLaunchTest.java\n- ClickCompatibilityTest.java\n- ClickExample.java\n- FindTextExample.java\n- LaunchAppExample.java\n- TaskUsageExample.java\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\n删除项目中的测试文件\n\n移除test_example文件夹下的所有示例和测试文件：\n- AppLaunchTest.java\n- ClickCompatibilityTest.java\n- ClickExample.java\n- FindTextExample.java\n- LaunchAppExample.java\n- TaskUsageExample.java\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(dir:*)",
+      "Bash(gradlew.bat assembleDebug:*)",
+      "Bash(./gradlew assembleDebug:*)",
+      "Bash(adb devices:*)",
+      "Bash(adb install:*)",
+      "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_BASE_URL'', ''https://api.vectorengine.ai'', ''Machine''\\)\")",
+      "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_AUTH_TOKEN'', ''sk-VGeF5Wb8W8BoAjLMNbA4S3E0bItP2OmK2oRA1CAg8mtlT1UI'', ''Machine''\\)\")",
+      "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_MODEL'', ''claude-haiku-4-5-20251001'', ''Machine''\\)\")",
+      "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_DEFAULT_HAIKU_MODEL'', ''claude-haiku-4-5-20251001'', ''Machine''\\)\")",
+      "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_DEFAULT_SONNET_MODEL'', ''claude-sonnet-4-20250514'', ''Machine''\\)\")",
+      "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_DEFAULT_OPUS_MODEL'', ''claude-opus-4-5-20251101'', ''Machine''\\)\")",
+      "Bash(del \"F:\\\\workspace\\\\AutoTask\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dy\\\\autotask\\\\task\\\\AppLaunchTest.java\" \"F:\\\\workspace\\\\AutoTask\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dy\\\\autotask\\\\task\\\\ClickCompatibilityTest.java\" \"F:\\\\workspace\\\\AutoTask\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dy\\\\autotask\\\\task\\\\ClickExample.java\" \"F:\\\\workspace\\\\AutoTask\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dy\\\\autotask\\\\task\\\\ColoredLogTest.java\" \"F:\\\\workspace\\\\AutoTask\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dy\\\\autotask\\\\task\\\\FindTextExample.java\" \"F:\\\\workspace\\\\AutoTask\\\\app\\\\src\\\\main\\\\java\\\\com\\\\dy\\\\autotask\\\\task\\\\TaskUsageExample.java\")",
+      "Bash(rm:*)",
+      "Bash(ls:*)",
+      "Bash(adb shell am start:*)",
+      "Bash(adb shell:*)",
+      "Bash(cat:*)",
+      "Bash(./gradlew compileDebugJava:*)",
+      "Bash(./gradlew app:compileDebugJavaWithJavac:*)",
+      "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_BASE_URL'', ''https://api5.ai'', ''Machine''\\)\")",
+      "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_AUTH_TOKEN'', ''sk-tlifa8miecb986532ZWTQNKGDAxuspmjgec9630Y'', ''Machine''\\)\")",
+      "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_MODEL'', ''claude-sonnet-4-20250514'', ''Machine''\\)\")",
+      "Bash(powershell -Command \"Write-Host ''=== 环境变量验证 ==='' ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_BASE_URL'', ''Machine''\\) | Write-Host ''ANTHROPIC_BASE_URL:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_AUTH_TOKEN'', ''Machine''\\) | Write-Host ''ANTHROPIC_AUTH_TOKEN:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_MODEL'', ''Machine''\\) | Write-Host ''ANTHROPIC_MODEL:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_DEFAULT_HAIKU_MODEL'', ''Machine''\\) | Write-Host ''ANTHROPIC_DEFAULT_HAIKU_MODEL:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_DEFAULT_SONNET_MODEL'', ''Machine''\\) | Write-Host ''ANTHROPIC_DEFAULT_SONNET_MODEL:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_DEFAULT_OPUS_MODEL'', ''Machine''\\) | Write-Host ''ANTHROPIC_DEFAULT_OPUS_MODEL:'' -NoNewline; Write-Host \\('' => '' + $_\")",
+      "Bash(powershell:*)",
+      "Bash(gradlew compileDebugJava:*)"
     ]
   }
 }

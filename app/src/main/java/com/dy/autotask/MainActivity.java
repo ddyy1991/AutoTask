@@ -96,7 +96,8 @@ public class MainActivity extends AppCompatActivity {
         AutomationTaskManager taskManager=AutomationTaskManager.getInstance();
         taskManager.setContext(this);
         AutomationTask task = new AutomationTask("打开webApp自动测试")
-                .pressHome()
+ 
+        .pressHome()
                 .launchApp("com.dy.webparseutil",6000)
                 .waitFor(1000)
                 .click("com.dy.webparseutil:id/btn_async_fetch", AutomationTask.ElementType.ID, 2000)  // 通过文本查找并点击“购物车”，超时2秒

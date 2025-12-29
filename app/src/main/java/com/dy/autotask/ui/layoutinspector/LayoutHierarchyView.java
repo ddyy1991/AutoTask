@@ -314,14 +314,16 @@ public class LayoutHierarchyView extends MultiLevelListView {
         TextView nameView;
         TextView infoView;
         ImageView arrowView;
-        LevelBeamView levelBeamView;
+        TextView expandIndicator;
+        View indentSpace;
         NodeInfo nodeInfo;
 
         ViewHolder(View view) {
             infoView = view.findViewById(R.id.dataItemInfo);
             nameView = view.findViewById(R.id.dataItemName);
             arrowView = view.findViewById(R.id.dataItemArrow);
-            levelBeamView = view.findViewById(R.id.dataItemLevelBeam);
+            expandIndicator = view.findViewById(R.id.expandIndicator);
+            indentSpace = view.findViewById(R.id.indentSpace);
         }
     }
 
@@ -367,45 +369,61 @@ public class LayoutHierarchyView extends MultiLevelListView {
                 viewHolder = (ViewHolder) convertView.getTag();
             }
 
-            viewHolder.nameView.setText(nodeInfo.toString());
             viewHolder.nodeInfo = nodeInfo;
 
-            // 设置文字颜色和背景：根据节点的不同状态显示不同的颜色
+            // 设置节点显示文本（类名 + 文本内容）
+            String displayText = nodeInfo.toString();
+            viewHolder.nameView.setText(displayText);
+
+            // 1. 设置缩进空间宽度（每级 16dp）
+            int indentWidth = itemInfo.getLevel() * 16;
+            android.view.ViewGroup.LayoutParams indentParams = viewHolder.indentSpace.getLayoutParams();
+            indentParams.width = indentWidth;
+            viewHolder.indentSpace.setLayoutParams(indentParams);
+
+            // 2. 设置展开/折叠指示器
+            if (itemInfo.isExpandable() && !isAlwaysExpanded()) {
+                viewHolder.expandIndicator.setVisibility(View.VISIBLE);
+                viewHolder.expandIndicator.setText(itemInfo.isExpanded() ? "▼" : "▶");
+                viewHolder.expandIndicator.setTextColor(0xFF333333);
+            } else {
+                viewHolder.expandIndicator.setVisibility(View.GONE);
+            }
+
+            // 3. 设置文字颜色和背景：根据节点的不同状态显示不同的颜色
             if (mSearchResults.contains(nodeInfo)) {
                 // 如果是搜索结果节点
                 if (mSearchResults.indexOf(nodeInfo) == mCurrentSearchIndex) {
-                    // 当前搜索结果项 - 蓝色
-                    viewHolder.nameView.setTextColor(0xFFFFFFFF); // 白色文字
-                    convertView.setBackgroundColor(0xFF2196F3); // 蓝色背景
+                    // 当前搜索结果项 - 蓝色背景，白色文字
+                    viewHolder.nameView.setTextColor(0xFFFFFFFF);
+                    convertView.setBackgroundColor(0xFF2196F3);
                 } else {
-                    // 其他搜索结果项 - 黄色
-                    viewHolder.nameView.setTextColor(0xFF000000); // 黑色文字
-                    convertView.setBackgroundColor(0xFFFFFF00); // 黄色背景
+                    // 其他搜索结果项 - 黄色背景，黑色文字
+                    viewHolder.nameView.setTextColor(0xFF000000);
+                    convertView.setBackgroundColor(0xFFFFFF00);
                 }
             } else if (nodeInfo.isSelectedItem()) {
                 // 普通选中的元素显示为紫色
-                viewHolder.nameView.setTextColor(0xFF800080); // 紫色
+                viewHolder.nameView.setTextColor(0xFF800080);
                 convertView.setBackgroundResource(R.drawable.selected_item_border);
             } else {
-                // 非选中元素显示为黑色
-                viewHolder.nameView.setTextColor(0xFF000000); // 黑色
+                // 非选中元素：类名用红色，其他黑色
+                // 可以从 nodeInfo.toString() 的格式来判断
+                String nodeClass = nodeInfo.getSimplifiedClassName();
+                if (nodeClass != null && !nodeClass.isEmpty()) {
+                    // 如果是 View 类型且不是基础布局，显示为红色
+                    if (isCustomOrImportantView(nodeClass)) {
+                        viewHolder.nameView.setTextColor(0xFFE91E63); // 深红色
+                    } else {
+                        viewHolder.nameView.setTextColor(0xFF333333); // 深灰色
+                    }
+                } else {
+                    viewHolder.nameView.setTextColor(0xFF333333);
+                }
                 convertView.setBackground(null);
             }
 
-            // 设置折叠指示器：只对有子元素的节点显示，颜色为黑色
-            if (itemInfo.isExpandable() && !isAlwaysExpanded()) {
-                viewHolder.arrowView.setVisibility(View.VISIBLE);
-                viewHolder.arrowView.setImageResource(itemInfo.isExpanded() ? R.drawable.ic_arrow_up : R.drawable.ic_arrow_down);
-                // 设置指示器颜色为黑色
-                viewHolder.arrowView.setColorFilter(0xFF000000); // 黑色
-            } else {
-                // 对于没有子元素的节点，不显示任何图标
-                viewHolder.arrowView.setVisibility(View.GONE);
-            }
-
-            viewHolder.levelBeamView.setLevel(itemInfo.getLevel());
-
-            // 为整个item view添加点击和长按监听器
+            // 4. 为整个 item view 添加点击和长按监听器
             convertView.setOnClickListener(v -> {
                 // 只有在非搜索模式下才更新普通选中状态
                 if (mSearchResults.isEmpty()) {
@@ -415,16 +433,16 @@ public class LayoutHierarchyView extends MultiLevelListView {
                     }
                     nodeInfo.setSelectedItem(true);
                     mCurrentSelectedNode = nodeInfo;
-                    
+
                     // 通知外部显示高亮区域
                     if (mOnItemClickHighlightListener != null) {
                         mOnItemClickHighlightListener.onItemClickHighlight(nodeInfo.getBoundsInScreen());
                     }
                 }
-                
+
                 // 通知适配器数据改变以更新UI
                 mAdapter.reloadData();
-                
+
                 // 直接处理点击事件，展开或收起子元素
                 if (itemInfo.isExpandable() && !isAlwaysExpanded()) {
                     // 获取item在列表中的位置
@@ -434,17 +452,33 @@ public class LayoutHierarchyView extends MultiLevelListView {
                     }
                 }
             });
-            
+
             convertView.setOnLongClickListener(v -> {
                 showNodeOptionsDialog(nodeInfo);
                 return true; // 返回true表示消费了长按事件
             });
-            
+
             // 确保convertView可以处理点击事件
             convertView.setClickable(true);
             convertView.setFocusable(true);
 
             return convertView;
+        }
+
+        /**
+         * 判断是否是自定义或重要的 View 类型（用红色显示）
+         */
+        private boolean isCustomOrImportantView(String className) {
+            // ListView, RecyclerView, ScrollView 等用红色显示
+            if (className.contains("List") || className.contains("Recycler") ||
+                className.contains("Scroll") || className.contains("ViewPager")) {
+                return true;
+            }
+            // 其他框架或自定义 View
+            if (className.contains("androidx.") || className.contains("android.support.")) {
+                return true;
+            }
+            return false;
         }
         /**
      * 显示节点操作选项对话框
