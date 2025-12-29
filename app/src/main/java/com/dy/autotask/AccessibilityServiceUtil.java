@@ -2131,66 +2131,292 @@ public class AccessibilityServiceUtil extends AccessibilityService {
             Log.e(TAG, "包名不能为空");
             return false;
         }
-        
+
+        // 增强版启动逻辑，更稳定可靠
+        return launchAppWithRetry(packageName, waitTimeMs, 1);
+    }
+
+    /**
+     * 带重试机制的应用启动方法（增强版）
+     * @param packageName 应用包名
+     * @param waitTimeMs 等待时间
+     * @param retryCount 重试次数（1表示只尝试一次）
+     * @return 是否启动成功
+     */
+    private boolean launchAppWithRetry(String packageName, long waitTimeMs, int retryCount) {
+        int maxRetries = retryCount;
+        int currentRetry = 0;
+
+        while (currentRetry < maxRetries) {
+            try {
+                // 第一步：检查应用是否已安装
+                PackageManager pm = getPackageManager();
+                try {
+                    pm.getPackageInfo(packageName, 0);
+                } catch (PackageManager.NameNotFoundException e) {
+                    Log.e(TAG, "应用未安装: " + packageName);
+                    return false;
+                }
+
+                Log.d(TAG, "[尝试 " + (currentRetry + 1) + "/" + maxRetries + "] 启动应用: " + packageName);
+
+                // 第二步：初始延迟，确保系统处于稳定状态（特别是在pressHome后）
+                if (currentRetry == 0) {
+                    Thread.sleep(500); // 初始延迟500ms
+                }
+
+                // 第三步：获取启动Intent并启动应用
+                boolean launchSuccess = attemptLaunchApp(packageName);
+                if (!launchSuccess) {
+                    Log.w(TAG, "第 " + (currentRetry + 1) + " 次启动失败，准备重试...");
+                    currentRetry++;
+                    if (currentRetry < maxRetries) {
+                        Thread.sleep(1000); // 重试前等待1秒
+                        continue;
+                    } else {
+                        return false;
+                    }
+                }
+
+                Log.d(TAG, "应用启动Intent已发送: " + packageName);
+
+                // 第四步：等待应用真正启动并进入前台
+                if (waitTimeMs > 0) {
+                    boolean launched = waitForAppLaunchWithValidation(packageName, waitTimeMs);
+                    if (launched) {
+                        Log.d(TAG, "✓ 应用成功启动并进入前台: " + packageName);
+                        return true;
+                    } else {
+                        Log.w(TAG, "✗ 等待应用启动超时或失败: " + packageName);
+                        currentRetry++;
+                        if (currentRetry < maxRetries) {
+                            // 清理并重试
+                            Thread.sleep(1000);
+                            continue;
+                        } else {
+                            // 最后一次重试也失败了，但应用可能在后台，返回true
+                            return true;
+                        }
+                    }
+                } else {
+                    // 不等待启动完成，直接返回（不推荐）
+                    Log.d(TAG, "已发送启动Intent，不等待启动完成");
+                    Thread.sleep(1000); // 最少等待1秒
+                    return true;
+                }
+
+            } catch (InterruptedException e) {
+                Log.e(TAG, "启动应用被中断: " + packageName);
+                Thread.currentThread().interrupt();
+                return false;
+            } catch (Exception e) {
+                Log.e(TAG, "启动应用异常: " + packageName + ", 错误: " + e.getMessage());
+                e.printStackTrace();
+                currentRetry++;
+                if (currentRetry < maxRetries) {
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
+            }
+        }
+
+        Log.e(TAG, "重试次数已达上限，最终启动失败: " + packageName);
+        return false;
+    }
+
+    /**
+     * 尝试启动应用（单次尝试）
+     * @param packageName 应用包名
+     * @return 是否成功发送启动Intent
+     */
+    private boolean attemptLaunchApp(String packageName) {
         try {
-            // 方法1: 使用标准启动Intent
-            Intent intent = getPackageManager().getLaunchIntentForPackage(packageName);
+            PackageManager pm = getPackageManager();
+
+            // 方法1: 使用标准启动Intent（推荐）
+            Intent intent = pm.getLaunchIntentForPackage(packageName);
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                Log.d(TAG, "使用标准启动Intent启动应用程序: " + packageName);
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP); // 清除栈顶，避免重复
+                Log.d(TAG, "使用标准启动Intent启动: " + packageName);
                 startActivity(intent);
-                Log.d(TAG, "成功启动应用程序: " + packageName);
-                
-                // 等待一段时间让应用启动
-                if (waitTimeMs > 0) {
-                    Thread.sleep(waitTimeMs);
-                }
-                
                 return true;
-            } else {
-                Log.w(TAG, "未找到应用程序的标准启动Intent: " + packageName + ", 尝试备用方法");
-                
-                // 方法2: 使用隐式Intent
-                Intent launchIntent = new Intent(Intent.ACTION_MAIN);
-                launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
-                launchIntent.setPackage(packageName);
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                
-                // 获取应用的启动Activity
-                PackageManager pm = getPackageManager();
-                List<ResolveInfo> activities = pm.queryIntentActivities(launchIntent, 0);
-                if (activities != null && !activities.isEmpty()) {
-                    ResolveInfo resolveInfo = activities.get(0); // 获取第一个启动Activity
-                    launchIntent.setComponent(new ComponentName(packageName, resolveInfo.activityInfo.name));
-                    Log.d(TAG, "使用隐式Intent启动应用程序: " + packageName + ", Activity: " + resolveInfo.activityInfo.name);
-                    startActivity(launchIntent);
-                    Log.d(TAG, "成功启动应用程序: " + packageName);
-                    
-                    // 等待一段时间让应用启动
-                    if (waitTimeMs > 0) {
-                        Thread.sleep(waitTimeMs);
+            }
+
+            // 方法2: 使用隐式Intent（备用）
+            Log.w(TAG, "标准Intent获取失败，使用隐式Intent");
+            Intent launchIntent = new Intent(Intent.ACTION_MAIN);
+            launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            launchIntent.setPackage(packageName);
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+            List<ResolveInfo> activities = pm.queryIntentActivities(launchIntent, 0);
+            if (activities != null && !activities.isEmpty()) {
+                ResolveInfo resolveInfo = activities.get(0);
+                launchIntent.setComponent(new ComponentName(packageName, resolveInfo.activityInfo.name));
+                Log.d(TAG, "使用隐式Intent启动: " + packageName + ", Activity: " + resolveInfo.activityInfo.name);
+                startActivity(launchIntent);
+                return true;
+            }
+
+            // 方法3: 最后尝试获取包信息（诊断）
+            try {
+                pm.getPackageInfo(packageName, 0);
+                Log.e(TAG, "应用已安装但无法启动: " + packageName + ", 可能被禁用或系统限制");
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.e(TAG, "应用未安装: " + packageName);
+            }
+
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "启动应用异常: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 改进的应用启动等待验证（支持降级方案）
+     * @param packageName 应用包名
+     * @param timeoutMs 超时时间
+     * @return 是否启动完成
+     */
+    private boolean waitForAppLaunchWithValidation(String packageName, long timeoutMs) {
+        try {
+            long startTime = System.currentTimeMillis();
+            int checkInterval = 300; // 检查间隔300ms
+            int maxAttempts = (int) (timeoutMs / checkInterval);
+            int attempts = 0;
+
+            while (attempts < maxAttempts && System.currentTimeMillis() - startTime < timeoutMs) {
+                attempts++;
+
+                // 方法1：使用UsageStatsManager（Android 5.0+，推荐）
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    if (checkForegroundAppWithUsageStats(packageName)) {
+                        Log.d(TAG, "✓ UsageStats检测: 应用已进入前台");
+                        return true;
                     }
-                    
+                }
+
+                // 方法2：使用AccessibilityService获取窗口包名（可靠）
+                if (checkForegroundAppWithAccessibility(packageName)) {
+                    Log.d(TAG, "✓ AccessibilityService检测: 应用已进入前台");
                     return true;
-                } else {
-                    Log.e(TAG, "无法找到应用程序的启动Activity: " + packageName);
-                    
-                    // 方法3: 检查应用是否已安装
-                    try {
-                        pm.getPackageInfo(packageName, 0);
-                        Log.e(TAG, "应用已安装但无法启动: " + packageName + ", 可能被系统限制");
-                    } catch (PackageManager.NameNotFoundException e) {
-                        Log.e(TAG, "应用未安装: " + packageName);
+                }
+
+                // 方法3：使用ActivityManager（备用，API 21+已弃用）
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+                    if (checkForegroundAppWithActivityManager(packageName)) {
+                        Log.d(TAG, "✓ ActivityManager检测: 应用已进入前台");
+                        return true;
                     }
-                    
-                    return false;
+                }
+
+                // 等待后重试
+                Thread.sleep(checkInterval);
+            }
+
+            // 超时后再次尝试（可能刚好启动）
+            Log.d(TAG, "启动等待超时，执行最后一次检查...");
+            if (checkForegroundAppWithAccessibility(packageName) ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && checkForegroundAppWithUsageStats(packageName))) {
+                Log.d(TAG, "✓ 最后检查成功: 应用已启动");
+                return true;
+            }
+
+            Log.w(TAG, "✗ 启动等待超时: " + packageName + ", 但应用可能在后台");
+            return false;
+        } catch (InterruptedException e) {
+            Log.e(TAG, "等待被中断: " + e.getMessage());
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "等待应用启动异常: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 使用AccessibilityService检查前台应用（最可靠）
+     */
+    private boolean checkForegroundAppWithAccessibility(String packageName) {
+        try {
+            AccessibilityNodeInfo rootNode = getRootInActiveWindow();
+            if (rootNode != null) {
+                String currentPackage = rootNode.getPackageName().toString();
+                if (packageName.equals(currentPackage)) {
+                    return true;
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "启动应用程序失败: " + packageName + ", 错误: " + e.getMessage());
-            e.printStackTrace();
-            return false;
+            Log.d(TAG, "AccessibilityService检查失败: " + e.getMessage());
         }
+        return false;
+    }
+
+    /**
+     * 使用UsageStatsManager检查前台应用
+     */
+    private boolean checkForegroundAppWithUsageStats(String packageName) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                UsageStatsManager usageStatsManager = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+                if (usageStatsManager == null) {
+                    return false;
+                }
+
+                long currentTime = System.currentTimeMillis();
+                List<UsageStats> stats = usageStatsManager.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY,
+                    currentTime - 1000 * 15,  // 查询最近15秒的数据
+                    currentTime
+                );
+
+                if (stats != null && !stats.isEmpty()) {
+                    // 找到最后使用的应用
+                    UsageStats recentUsage = null;
+                    for (UsageStats stat : stats) {
+                        if (recentUsage == null || stat.getLastTimeUsed() > recentUsage.getLastTimeUsed()) {
+                            recentUsage = stat;
+                        }
+                    }
+
+                    if (recentUsage != null && packageName.equals(recentUsage.getPackageName())) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "UsageStats检查失败: " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * 使用ActivityManager检查前台应用（已弃用，仅作备用）
+     */
+    @SuppressWarnings("deprecation")
+    private boolean checkForegroundAppWithActivityManager(String packageName) {
+        try {
+            ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                List<ActivityManager.RunningTaskInfo> taskInfo = am.getRunningTasks(1);
+                if (!taskInfo.isEmpty() && taskInfo.get(0).topActivity != null) {
+                    String currentPackage = taskInfo.get(0).topActivity.getPackageName();
+                    if (packageName.equals(currentPackage)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "ActivityManager检查失败: " + e.getMessage());
+        }
+        return false;
     }
     
     /**
