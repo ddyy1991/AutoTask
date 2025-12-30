@@ -43,6 +43,14 @@
         android:layout_marginBottom="12dp" />
 
     <Button
+        android:id="@+id/screenshot_permission_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="获取截图权限"
+        android:textSize="18sp"
+        android:layout_marginBottom="12dp" />
+
+    <Button
         android:id="@+id/task_test"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

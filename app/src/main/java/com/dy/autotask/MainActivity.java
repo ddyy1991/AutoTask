@@ -1,6 +1,7 @@
 package com.dy.autotask;
 
 import android.content.Intent;
+import android.media.projection.MediaProjectionManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,16 +19,19 @@ import android.widget.CheckBox;
 import com.dy.autotask.task.AutomationTask;
 import com.dy.autotask.task.AutomationTaskManager;
 import com.dy.autotask.utils.AutoTaskHelper;
+import com.dy.autotask.utils.ScreenshotUtil;
 import com.dy.autotask.utils.SettingsManager;
 
 public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_FLOAT_WINDOW_PERMISSION = 1001;
+    private static final int REQUEST_MEDIA_PROJECTION = 1002;  // 新增：截图权限请求码
     private AutoTaskHelper autoTaskHelper;
     private TextView statusText;
     private View taskTest;
     private CheckBox cbLogWindow;
     private SettingsManager settingsManager;
     private String TAG = "MainActivity";
+    private MediaProjectionManager mediaProjectionManager;  // 新增：MediaProjection管理器
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,19 +55,23 @@ public class MainActivity extends AppCompatActivity {
         cbLogWindow = findViewById(R.id.cb_log_window);
         Button enableServiceBtn = findViewById(R.id.enable_service_btn);
         Button floatPermissionBtn = findViewById(R.id.float_permission_btn);
-        
+        Button screenshotPermissionBtn = findViewById(R.id.screenshot_permission_btn);  // 新增
+
+        // 初始化MediaProjectionManager
+        mediaProjectionManager = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
+
         // 初始化设置管理器
         settingsManager = SettingsManager.getInstance(this);
-        
+
         // 设置复选框初始状态
         cbLogWindow.setChecked(settingsManager.isLogWindowEnabled());
-        
+
         // 设置复选框状态变化监听器
         cbLogWindow.setOnCheckedChangeListener((buttonView, isChecked) -> {
             settingsManager.setLogWindowEnabled(isChecked);
             Toast.makeText(this, isChecked ? "任务日志悬浮窗已启用" : "任务日志悬浮窗已禁用", Toast.LENGTH_SHORT).show();
         });
-        
+
         enableServiceBtn.setOnClickListener(v -> {
             boolean isServiceEnabled = autoTaskHelper.isAccessibilityServiceEnabled(this);
             if(!isServiceEnabled){
@@ -83,7 +91,12 @@ public class MainActivity extends AppCompatActivity {
         floatPermissionBtn.setOnClickListener(v -> {
             requestFloatWindowPermission();
         });
-        
+
+        // 新增：截图权限按钮点击监听
+        screenshotPermissionBtn.setOnClickListener(v -> {
+            requestScreenshotPermission();
+        });
+
         updateStatus();
     }
     
@@ -161,12 +174,14 @@ public class MainActivity extends AppCompatActivity {
     private void updateStatus() {
         boolean isServiceEnabled = autoTaskHelper.isAccessibilityServiceEnabled(this);
         boolean hasFloatPermission = checkFloatWindowPermission();
-        
+        boolean hasMediaProjection = ScreenshotUtil.getMediaProjection() != null;  // 新增
+
         StringBuilder status = new StringBuilder();
         status.append("服务状态:\n");
         status.append("无障碍服务: ").append(isServiceEnabled ? "已启用" : "未启用").append("\n");
         status.append("悬浮窗权限: ").append(hasFloatPermission ? "已授权" : "未授权").append("\n");
-        
+        status.append("截图权限: ").append(hasMediaProjection ? "已获取" : "未获取").append("\n");
+
         statusText.setText(status.toString());
     }
     
@@ -181,6 +196,26 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         updateStatus();
+    }
+
+    /**
+     * 新增：请求截图权限（MediaProjection）
+     */
+    private void requestScreenshotPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            if (ScreenshotUtil.getMediaProjection() != null) {
+                Toast.makeText(this, "截图权限已获取", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            Log.d(TAG, "开始请求截图权限");
+
+            // 创建MediaProjection的Intent
+            Intent intent = mediaProjectionManager.createScreenCaptureIntent();
+            startActivityForResult(intent, REQUEST_MEDIA_PROJECTION);
+        } else {
+            Toast.makeText(this, "设备不支持该功能（需要Android 5.0+）", Toast.LENGTH_SHORT).show();
+        }
     }
     
     private boolean checkFloatWindowPermission() {
@@ -200,6 +235,37 @@ public class MainActivity extends AppCompatActivity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_FLOAT_WINDOW_PERMISSION) {
+            updateStatus();
+        } else if (requestCode == REQUEST_MEDIA_PROJECTION) {  // 新增：处理截图权限
+            if (resultCode == RESULT_OK && data != null) {
+                Log.d(TAG, "用户授予了截图权限");
+
+                // 获取屏幕尺寸信息
+                android.util.DisplayMetrics displayMetrics = new android.util.DisplayMetrics();
+                getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
+                int screenWidth = displayMetrics.widthPixels;
+                int screenHeight = displayMetrics.heightPixels;
+                int screenDensity = displayMetrics.densityDpi;
+
+                Log.d(TAG, "屏幕尺寸: " + screenWidth + "x" + screenHeight + ", 密度: " + screenDensity);
+
+                // 创建MediaProjection实例
+                android.media.projection.MediaProjection mediaProjection =
+                        mediaProjectionManager.getMediaProjection(resultCode, data);
+
+                if (mediaProjection != null) {
+                    // 将MediaProjection设置到ScreenshotUtil
+                    ScreenshotUtil.setMediaProjection(mediaProjection, screenWidth, screenHeight, screenDensity);
+                    Log.d(TAG, "MediaProjection已初始化并保存");
+                    Toast.makeText(this, "截图权限已获取，可以使用高效截图功能", Toast.LENGTH_SHORT).show();
+                } else {
+                    Log.e(TAG, "创建MediaProjection失败");
+                    Toast.makeText(this, "截图权限获取失败", Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                Log.w(TAG, "用户拒绝了截图权限");
+                Toast.makeText(this, "截图权限被拒绝，将使用无障碍服务截图", Toast.LENGTH_SHORT).show();
+            }
             updateStatus();
         }
     }

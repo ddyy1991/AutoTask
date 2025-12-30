@@ -1,9 +1,11 @@
 package com.dy.autotask.utils;
 
 import android.accessibilityservice.AccessibilityService;
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.provider.Settings;
+import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 
 import com.dy.autotask.AccessibilityServiceUtil;
@@ -131,5 +133,152 @@ public class AutoTaskHelper {
     public void initOrUpdateFloatingView() throws IllegalStateException {
         AccessibilityServiceUtil service = getService();
         service.initOrUpdateFloatingView();
+    }
+
+    // ===================== 截图功能 =====================
+
+    /**
+     * 全屏截图（推荐方法）
+     * 无需root权限，会自动选择最佳的截图方式
+     *
+     * @param context 应用上下文
+     * @param activity 需要截图的Activity
+     * @return 截图保存的文件路径，失败返回null
+     */
+    public String captureScreen(Context context, Activity activity) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.captureScreen(activity, null);
+    }
+
+    /**
+     * 全屏截图（指定文件名）
+     *
+     * @param context 应用上下文
+     * @param activity 需要截图的Activity
+     * @param filename 保存文件名
+     * @return 截图保存的文件路径，失败返回null
+     */
+    public String captureScreen(Context context, Activity activity, String filename) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.captureScreen(activity, filename);
+    }
+
+    /**
+     * 截图指定视图
+     *
+     * @param context 应用上下文
+     * @param view 需要截图的视图
+     * @return 截图保存的文件路径，失败返回null
+     */
+    public String captureView(Context context, View view) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.captureView(view, null);
+    }
+
+    /**
+     * 截图指定视图（指定文件名）
+     *
+     * @param context 应用上下文
+     * @param view 需要截图的视图
+     * @param filename 保存文件名
+     * @return 截图保存的文件路径，失败返回null
+     */
+    public String captureView(Context context, View view, String filename) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.captureView(view, filename);
+    }
+
+    /**
+     * 使用PixelCopy API截图（API 24+）
+     *
+     * @param context 应用上下文
+     * @param activity 需要截图的Activity
+     * @return 截图保存的文件路径，失败返回null
+     */
+    public String captureWithPixelCopy(Context context, Activity activity) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.captureWithPixelCopy(activity, null);
+    }
+
+    /**
+     * 获取截图保存目录
+     *
+     * @param context 应用上下文
+     * @return 截图目录路径
+     */
+    public String getScreenshotFolderPath(Context context) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.getScreenshotFolderPath();
+    }
+
+    /**
+     * 清空所有截图
+     *
+     * @param context 应用上下文
+     * @return 删除的文件数量
+     */
+    public int clearScreenshots(Context context) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.clearScreenshots();
+    }
+
+    /**
+     * 打印截图文件夹信息
+     *
+     * @param context 应用上下文
+     */
+    public void printScreenshotFolderInfo(Context context) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        screenshotUtil.printScreenshotFolderInfo();
+    }
+
+    // ===================== 后台截图功能 =====================
+
+    /**
+     * 使用无障碍服务进行全屏截图
+     * 支持应用后台运行时的截图
+     *
+     * @param context 应用上下文
+     * @return 截图保存的文件路径，失败返回null
+     */
+    public String captureScreenWithAccessibility(Context context) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.captureScreenWithAccessibility(null);
+    }
+
+    /**
+     * 使用无障碍服务进行全屏截图（指定文件名）
+     *
+     * @param context 应用上下文
+     * @param filename 保存文件名
+     * @return 截图保存的文件路径，失败返回null
+     */
+    public String captureScreenWithAccessibility(Context context, String filename) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.captureScreenWithAccessibility(filename);
+    }
+
+    /**
+     * 使用MediaProjection进行后台截图
+     * 需要先通过setMediaProjection()初始化
+     *
+     * @param context 应用上下文
+     * @return 截图保存的文件路径，失败返回null
+     */
+    public String captureScreenWithMediaProjection(Context context) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.captureWithMediaProjection(null);
+    }
+
+    /**
+     * 使用MediaProjection进行后台截图（指定文件名）
+     *
+     * @param context 应用上下文
+     * @param filename 保存文件名
+     * @return 截图保存的文件路径，失败返回null
+     */
+    public String captureScreenWithMediaProjection(Context context, String filename) {
+        ScreenshotUtil screenshotUtil = new ScreenshotUtil(context);
+        return screenshotUtil.captureWithMediaProjection(filename);
     }
 }

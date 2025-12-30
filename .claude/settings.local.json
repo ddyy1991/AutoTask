@@ -28,7 +28,10 @@
       "Bash(powershell -Command \"[Environment]::SetEnvironmentVariable\\(''ANTHROPIC_MODEL'', ''claude-sonnet-4-20250514'', ''Machine''\\)\")",
       "Bash(powershell -Command \"Write-Host ''=== 环境变量验证 ==='' ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_BASE_URL'', ''Machine''\\) | Write-Host ''ANTHROPIC_BASE_URL:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_AUTH_TOKEN'', ''Machine''\\) | Write-Host ''ANTHROPIC_AUTH_TOKEN:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_MODEL'', ''Machine''\\) | Write-Host ''ANTHROPIC_MODEL:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_DEFAULT_HAIKU_MODEL'', ''Machine''\\) | Write-Host ''ANTHROPIC_DEFAULT_HAIKU_MODEL:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_DEFAULT_SONNET_MODEL'', ''Machine''\\) | Write-Host ''ANTHROPIC_DEFAULT_SONNET_MODEL:'' -NoNewline; Write-Host \\('' => '' + $_ ; [Environment]::GetEnvironmentVariable\\(''ANTHROPIC_DEFAULT_OPUS_MODEL'', ''Machine''\\) | Write-Host ''ANTHROPIC_DEFAULT_OPUS_MODEL:'' -NoNewline; Write-Host \\('' => '' + $_\")",
       "Bash(powershell:*)",
-      "Bash(gradlew compileDebugJava:*)"
+      "Bash(gradlew compileDebugJava:*)",
+      "Bash(./gradlew.bat compileDebugJava:*)",
+      "Bash(./gradlew.bat app:compileDebugJavaWithJavac:*)",
+      "Bash(./gradlew.bat assembleDebug:*)"
     ]
   }
 }

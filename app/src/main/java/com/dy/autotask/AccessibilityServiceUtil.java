@@ -54,6 +54,7 @@ import java.util.List;
 import com.dy.autotask.ui.overlay.HighlightOverlayView;
 
 import com.dy.autotask.utils.AutoJsTool;
+import com.dy.autotask.utils.AutoTaskHelper;  // 新增：导入AutoTaskHelper
 import com.dy.autotask.model.NodeInfo;
 import com.dy.autotask.task.AutomationTaskManager;
 
@@ -75,7 +76,7 @@ public class AccessibilityServiceUtil extends AccessibilityService {
     private View floatingView;
     private TextView infoTextView;
     private boolean isFloatingViewAdded = false;
-    
+
     // 悬浮窗状态管理
     private boolean isMenuExpanded = false;
     private Button btnMainFloat;
@@ -83,6 +84,7 @@ public class AccessibilityServiceUtil extends AccessibilityService {
     private Button btnCopyNodes;
     private Button btnCloseFloat;
     private Button btnToggleLog;
+    private Button btnScreenshot;  // 新增：截图按钮
     private FrameLayout floatMenuContainer;
     
     // 骨架图相关
@@ -378,11 +380,12 @@ public class AccessibilityServiceUtil extends AccessibilityService {
             btnCopyNodes = floatingView.findViewById(R.id.btn_copy_nodes);
             btnCloseFloat = floatingView.findViewById(R.id.btn_close_float);
             btnToggleLog = floatingView.findViewById(R.id.btn_toggle_log);
+            btnScreenshot = floatingView.findViewById(R.id.btn_screenshot);  // 新增：找到截图按钮
             floatMenuContainer = floatingView.findViewById(R.id.float_menu_container);
-            
-            Log.d(TAG, "控件查找结果: btnMainFloat=" + (btnMainFloat != null) + ", btnCaptureSkeleton=" + (btnCaptureSkeleton != null) + ", btnCopyNodes=" + (btnCopyNodes != null) + ", btnCloseFloat=" + (btnCloseFloat != null) + ", floatMenuContainer=" + (floatMenuContainer != null));
-            
-            if (btnMainFloat == null || btnCaptureSkeleton == null || btnCopyNodes == null || btnCloseFloat == null || floatMenuContainer == null) {
+
+            Log.d(TAG, "控件查找结果: btnMainFloat=" + (btnMainFloat != null) + ", btnCaptureSkeleton=" + (btnCaptureSkeleton != null) + ", btnCopyNodes=" + (btnCopyNodes != null) + ", btnCloseFloat=" + (btnCloseFloat != null) + ", btnScreenshot=" + (btnScreenshot != null) + ", floatMenuContainer=" + (floatMenuContainer != null));
+
+            if (btnMainFloat == null || btnCaptureSkeleton == null || btnCopyNodes == null || btnCloseFloat == null || btnScreenshot == null || floatMenuContainer == null) {
                 Log.e(TAG, "无法找到悬浮窗中的控件");
                 return;
             }
@@ -505,19 +508,25 @@ public class AccessibilityServiceUtil extends AccessibilityService {
             captureSkeleton();
             toggleMenuExpansion(); // 收起菜单
         });
-        
+
         // 功能按钮2：复制节点层次数据
         btnCopyNodes.setOnClickListener(v -> {
             copyNodeHierarchy();
             toggleMenuExpansion(); // 收起菜单
         });
-        
-        // 功能按钮3：关闭悬浮窗
+
+        // 功能按钮3：截图（新增）
+        btnScreenshot.setOnClickListener(v -> {
+            takeScreenshot();
+            toggleMenuExpansion(); // 收起菜单
+        });
+
+        // 功能按钮4：关闭悬浮窗
         btnCloseFloat.setOnClickListener(v -> {
             closeFloatingView();
         });
-        
-        // 功能按钮4：任务日志控制
+
+        // 功能按钮5：任务日志控制
         btnToggleLog.setOnClickListener(v -> {
             toggleTaskLogWindow();
             toggleMenuExpansion(); // 收起菜单
@@ -540,74 +549,81 @@ public class AccessibilityServiceUtil extends AccessibilityService {
      * 展开菜单（右侧水平排列）
      */
     private void expandMenu() {
-        if (btnCaptureSkeleton == null || btnCopyNodes == null || btnCloseFloat == null || btnToggleLog == null) {
+        if (btnCaptureSkeleton == null || btnCopyNodes == null || btnCloseFloat == null || btnToggleLog == null || btnScreenshot == null) {
             return;
         }
-        
+
         // 设置按钮可见性
         btnToggleLog.setVisibility(View.VISIBLE);
+        btnScreenshot.setVisibility(View.VISIBLE);  // 新增
         btnCaptureSkeleton.setVisibility(View.VISIBLE);
         btnCopyNodes.setVisibility(View.VISIBLE);
         btnCloseFloat.setVisibility(View.VISIBLE);
-        
+
         // 动态调整悬浮窗触摸区域以容纳展开的菜单
         adjustFloatingViewSizeForExpandedMenu();
-        
+
         // 获取屏幕密度，用于dp转px
         float density = getResources().getDisplayMetrics().density;
         // 按钮大小为35dp，间距为3dp
         int buttonWidthPx = (int) (35 * density);
         int spacingPx = (int) (3 * density);
-        
+
         // 水平排列，从主按钮右侧开始，间距3dp
-        // 按钮1：最右侧
+        // 按钮0：最右侧
+        int x0 = buttonWidthPx * 4 + spacingPx * 4;
+        int y0 = 0;
+
+        // 按钮1：第二右
         int x1 = buttonWidthPx * 3 + spacingPx * 3;
         int y1 = 0;
-        
+
         // 按钮2：中间偏右
         int x2 = buttonWidthPx * 2 + spacingPx * 2;
         int y2 = 0;
-        
+
         // 按钮3：中间偏左
         int x3 = buttonWidthPx + spacingPx;
         int y3 = 0;
-        
+
         // 按钮4：最左侧（靠近主按钮）
         int x4 = 0;
         int y4 = 0;
-        
+
         // 应用展开动画
-        animateButton(btnToggleLog, x4, y4, 0);  // 最左侧按钮
+        animateButton(btnToggleLog, x4, y4, 0);      // 最左侧按钮
+        animateButton(btnScreenshot, x3, y3, 0);     // 新增：截图按钮在第二个位置
         animateButton(btnCaptureSkeleton, x1, y1, 0);
         animateButton(btnCopyNodes, x2, y2, 150);
-        animateButton(btnCloseFloat, x3, y3, 300);  // 最右侧按钮
-        
+        animateButton(btnCloseFloat, x0, y0, 300);   // 最右侧按钮
+
         // 主按钮旋转动画
         btnMainFloat.animate()
                 .rotation(45)
                 .setDuration(300)
                 .start();
     }
-    
+
     /**
      * 收起扇形菜单
      */
     private void collapseMenu() {
-        if (btnCaptureSkeleton == null || btnCopyNodes == null || btnCloseFloat == null || btnToggleLog == null) {
+        if (btnCaptureSkeleton == null || btnCopyNodes == null || btnCloseFloat == null || btnToggleLog == null || btnScreenshot == null) {
             return;
         }
-        
+
         // 应用收起动画
+        animateButtonBack(btnToggleLog, 0);
+        animateButtonBack(btnScreenshot, 0);         // 新增
         animateButtonBack(btnCaptureSkeleton, 300);
         animateButtonBack(btnCopyNodes, 150);
         animateButtonBack(btnCloseFloat, 0);
-        animateButtonBack(btnToggleLog, 0);
-        
+
         // 在动画结束后调整悬浮窗触摸区域
         btnCloseFloat.postDelayed(() -> {
             adjustFloatingViewSizeForCollapsedMenu();
         }, 300);
-        
+
         // 主按钮旋转动画
         btnMainFloat.animate()
                 .rotation(0)
@@ -651,26 +667,28 @@ public class AccessibilityServiceUtil extends AccessibilityService {
         if (floatingView == null || windowManager == null) {
             return;
         }
-        
+
         try {
             WindowManager.LayoutParams params = (WindowManager.LayoutParams) floatingView.getLayoutParams();
             if (params != null) {
                 // 获取屏幕密度
                 float density = getResources().getDisplayMetrics().density;
-                
+
                 // 计算展开菜单所需的尺寸
-                // 按钮容器左边距: 40dp, 子按钮: 35dp * 4, 按钮间间距: 3dp * 3, 额外边距: 10dp
-                int totalWidthDp = 40 + 35 * 4 + 3 * 3 + 10; // 左边距 + 4个子按钮 + 3个间距 + 额外边距
-                int totalHeightDp = 35; // 高度与主按钮相同
-                
+                // 按钮容器左边距: 40dp, 5个子按钮: 35dp * 5, 按钮间间距: 3dp * 4, 右边距: 10dp
+                int totalWidthDp = 40 + 35 * 5 + 3 * 4 + 10; // 左边距 + 5个子按钮 + 4个间距 + 右边距
+                int totalHeightDp = 40; // 高度稍大于主按钮以容纳所有内容
+
                 // 转换为像素
                 int totalWidthPx = (int) (totalWidthDp * density + 0.5f);
                 int totalHeightPx = (int) (totalHeightDp * density + 0.5f);
-                
+
                 // 更新布局参数
                 params.width = totalWidthPx;
                 params.height = totalHeightPx;
-                
+
+                Log.d(TAG, "展开菜单窗口大小: " + totalWidthDp + "dp x " + totalHeightDp + "dp = " + totalWidthPx + "px x " + totalHeightPx + "px");
+
                 // 更新悬浮窗
                 windowManager.updateViewLayout(floatingView, params);
             }
@@ -767,7 +785,7 @@ public class AccessibilityServiceUtil extends AccessibilityService {
      */
     private void toggleTaskLogWindow() {
         Log.d(TAG, "切换任务日志窗口显示状态");
-        
+
         // 获取任务管理器实例
         AutomationTaskManager taskManager = AutomationTaskManager.getInstance();
         if (taskManager != null) {
@@ -778,7 +796,49 @@ public class AccessibilityServiceUtil extends AccessibilityService {
             }
         }
     }
-    
+
+    /**
+     * 截图整个屏幕（新增）
+     * 优先使用MediaProjection方式，否则使用无障碍方式
+     */
+    private void takeScreenshot() {
+        Log.d(TAG, "用户点击了截图按钮");
+
+        try {
+            String filePath = null;
+            com.dy.autotask.utils.ScreenshotUtil screenshotUtil =
+                    new com.dy.autotask.utils.ScreenshotUtil(getApplicationContext());
+
+            // 检查是否已获取MediaProjection权限
+            if (com.dy.autotask.utils.ScreenshotUtil.getMediaProjection() != null) {
+                Log.d(TAG, "检测到MediaProjection可用，使用高效截图方式");
+                // 优先使用MediaProjection方式（高效）
+                filePath = screenshotUtil.captureWithMediaProjection(null);
+                if (filePath != null) {
+                    Log.i(TAG, "MediaProjection截图成功: " + filePath);
+                }
+            } else {
+                Log.d(TAG, "MediaProjection不可用，使用无障碍服务截图方式");
+                // 降级为无障碍方式
+                filePath = screenshotUtil.captureScreenWithAccessibility(null);
+                if (filePath != null) {
+                    Log.i(TAG, "无障碍服务截图成功: " + filePath);
+                }
+            }
+
+            if (filePath != null) {
+                Log.i(TAG, "截图成功: " + filePath);
+                Toast.makeText(this, "截图已保存", Toast.LENGTH_SHORT).show();
+            } else {
+                Log.e(TAG, "截图失败");
+                Toast.makeText(this, "截图失败，请检查日志", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "截图异常: " + e.getMessage(), e);
+            Toast.makeText(this, "截图异常: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
     /**
      * 绘制骨架图覆盖层
      */

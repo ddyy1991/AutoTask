@@ -20,11 +20,12 @@
     <!-- 水平展开的按钮容器 -->
     <FrameLayout
         android:id="@+id/float_menu_container"
-        android:layout_width="200dp"
+        android:layout_width="290dp"
         android:layout_height="40dp"
         android:layout_gravity="top|left"
         android:paddingLeft="40dp"
-        android:paddingTop="0dp">
+        android:paddingTop="0dp"
+        android:paddingRight="10dp">
 
         <!-- 功能按钮4：任务日志控制 -->
         <Button
@@ -40,7 +41,7 @@
             android:elevation="8dp"
             android:gravity="center" />
 
-        <!-- 功能按钮3：关闭悬浮窗 -->
+        <!-- 功能按钮5：关闭悬浮窗 -->
         <Button
             android:id="@+id/btn_close_float"
             android:layout_width="35dp"
@@ -48,6 +49,20 @@
             android:layout_gravity="top|left"
             android:background="@drawable/float_button_shape"
             android:text="关闭"
+            android:textColor="#FFFFFF"
+            android:textSize="10sp"
+            android:visibility="gone"
+            android:elevation="8dp"
+            android:gravity="center" />
+
+        <!-- 功能按钮3：截图 -->
+        <Button
+            android:id="@+id/btn_screenshot"
+            android:layout_width="35dp"
+            android:layout_height="35dp"
+            android:layout_gravity="top|left"
+            android:background="@drawable/float_button_shape"
+            android:text="截图"
             android:textColor="#FFFFFF"
             android:textSize="10sp"
             android:visibility="gone"
