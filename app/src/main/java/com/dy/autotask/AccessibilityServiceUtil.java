@@ -816,6 +816,13 @@ public class AccessibilityServiceUtil extends AccessibilityService {
                 filePath = screenshotUtil.captureWithMediaProjection(null);
                 if (filePath != null) {
                     Log.i(TAG, "MediaProjection截图成功: " + filePath);
+                } else {
+                    // MediaProjection失败，fallback到无障碍方式
+                    Log.w(TAG, "MediaProjection截图失败，降级为无障碍方式");
+                    filePath = screenshotUtil.captureScreenWithAccessibility(null);
+                    if (filePath != null) {
+                        Log.i(TAG, "无障碍方式截图成功: " + filePath);
+                    }
                 }
             } else {
                 Log.d(TAG, "MediaProjection不可用，使用无障碍服务截图方式");

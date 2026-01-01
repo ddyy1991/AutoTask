@@ -56,6 +56,7 @@ public class MainActivity extends AppCompatActivity {
         Button enableServiceBtn = findViewById(R.id.enable_service_btn);
         Button floatPermissionBtn = findViewById(R.id.float_permission_btn);
         Button screenshotPermissionBtn = findViewById(R.id.screenshot_permission_btn);  // 新增
+        Button imageAnalysisBtn = findViewById(R.id.image_analysis_btn);  // 新增：图片分析按钮
 
         // 初始化MediaProjectionManager
         mediaProjectionManager = (MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE);
@@ -95,6 +96,11 @@ public class MainActivity extends AppCompatActivity {
         // 新增：截图权限按钮点击监听
         screenshotPermissionBtn.setOnClickListener(v -> {
             requestScreenshotPermission();
+        });
+
+        // 新增：图片分析按钮点击监听
+        imageAnalysisBtn.setOnClickListener(v -> {
+            startImageAnalysis();
         });
 
         updateStatus();
@@ -217,7 +223,16 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "设备不支持该功能（需要Android 5.0+）", Toast.LENGTH_SHORT).show();
         }
     }
-    
+
+    /**
+     * 新增：启动图片分析 Activity
+     */
+    private void startImageAnalysis() {
+        Log.d(TAG, "启动图片分析 Activity");
+        Intent intent = new Intent(this, ImageAnalysisActivity.class);
+        startActivity(intent);
+    }
+
     private boolean checkFloatWindowPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             return Settings.canDrawOverlays(this);

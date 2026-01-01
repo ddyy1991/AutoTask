@@ -31,7 +31,13 @@
       "Bash(gradlew compileDebugJava:*)",
       "Bash(./gradlew.bat compileDebugJava:*)",
       "Bash(./gradlew.bat app:compileDebugJavaWithJavac:*)",
-      "Bash(./gradlew.bat assembleDebug:*)"
+      "Bash(./gradlew.bat assembleDebug:*)",
+      "Bash(./gradlew compileDebugJavaWithJavac:*)",
+      "Bash(adb logcat:*)",
+      "Bash(kill:*)",
+      "Bash(./gradlew.bat:*)",
+      "Bash(adb uninstall:*)",
+      "Bash(findstr:*)"
     ]
   }
 }

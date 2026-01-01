@@ -17,10 +17,23 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    buildFeatures {
+        buildConfig true
+    }
+
     buildTypes {
+        debug {
+            minifyEnabled false
+            // 配置 GLM API Key（从环境变量读取，默认为测试密钥）
+            buildConfigField "String", "GLM_API_KEY",
+                "\"${System.getenv('GLM_API_KEY')?:'ead125b5f3e34761aba76772d3dfb2cb.HK4meCbrnMUz4JXg'}\""
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // 生产环境应该从 BuildConfig.gradle 或 local.properties 读取
+            buildConfigField "String", "GLM_API_KEY",
+                "\"${System.getenv('GLM_API_KEY')?:'YOUR_API_KEY_HERE'}\""
         }
     }
     compileOptions {
@@ -37,6 +50,16 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // 新增：网络请求库
+    implementation 'com.squareup.okhttp3:okhttp:4.11.0'
+
+    // 新增：JSON 序列化库
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // 新增：Fragment 和 ViewModel 支持
+    implementation 'androidx.fragment:fragment:1.6.2'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel:2.6.2'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
