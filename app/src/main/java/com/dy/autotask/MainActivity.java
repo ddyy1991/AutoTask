@@ -13,18 +13,24 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import android.widget.CheckBox;
+import android.content.pm.PackageManager;
+import android.Manifest;
 
 import com.dy.autotask.task.AutomationTask;
 import com.dy.autotask.task.AutomationTaskManager;
 import com.dy.autotask.utils.AutoTaskHelper;
 import com.dy.autotask.utils.ScreenshotUtil;
 import com.dy.autotask.utils.SettingsManager;
+import com.dy.autotask.utils.RootUtil;
 
 public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_FLOAT_WINDOW_PERMISSION = 1001;
     private static final int REQUEST_MEDIA_PROJECTION = 1002;  // 新增：截图权限请求码
+    private static final int REQUEST_FILE_PERMISSIONS = 1003;  // 新增：文件权限请求码
     private AutoTaskHelper autoTaskHelper;
     private TextView statusText;
     private View taskTest;
@@ -32,6 +38,7 @@ public class MainActivity extends AppCompatActivity {
     private SettingsManager settingsManager;
     private String TAG = "MainActivity";
     private MediaProjectionManager mediaProjectionManager;  // 新增：MediaProjection管理器
+    private boolean hasRootPermission = false;  // 新增：root权限标志
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,6 +48,9 @@ public class MainActivity extends AppCompatActivity {
         // 初始化辅助类
         autoTaskHelper = AutoTaskHelper.getInstance();
         autoTaskHelper.initialize();
+        
+        // 检测root权限
+        checkAndRequestRootPermission();
         
         // 初始化UI组件
         initUI();
@@ -164,7 +174,12 @@ public class MainActivity extends AppCompatActivity {
         // 检查无障碍服务是否启用
         boolean isServiceEnabled = autoTaskHelper.isAccessibilityServiceEnabled(this);
         if (!isServiceEnabled) {
-            Toast.makeText(this, "请启用无障碍服务", Toast.LENGTH_LONG).show();
+            if (hasRootPermission) {
+                Toast.makeText(this, "检测到Root权限，正在自动申请无障碍权限...", Toast.LENGTH_LONG).show();
+                autoTaskHelper.openAccessibilitySettings(this);
+            } else {
+                Toast.makeText(this, "请启用无障碍服务", Toast.LENGTH_LONG).show();
+            }
         } else {
             // 尝试初始化悬浮窗
             try {
@@ -177,15 +192,74 @@ public class MainActivity extends AppCompatActivity {
         updateStatus();
     }
     
+    /**
+     * 新增：检测并申请root权限
+     */
+    private void checkAndRequestRootPermission() {
+        Log.d(TAG, "开始检测root权限...");
+        hasRootPermission = RootUtil.hasRootPermission();
+        Log.d(TAG, "root权限检测结果: " + hasRootPermission);
+        
+        if (hasRootPermission) {
+            Toast.makeText(this, "检测到Root权限，正在自动申请相关权限...", Toast.LENGTH_LONG).show();
+            // 自动申请文件读写权限
+            requestFilePermissionsWithRoot();
+            // 自动申请无障碍权限
+            requestAccessibilityPermissionWithRoot();
+            // 自动申请悬浮窗权限
+            requestFloatWindowPermissionWithRoot();
+        }
+    }
+    
+    /**
+     * 新增：使用root权限申请文件读写权限
+     */
+    private void requestFilePermissionsWithRoot() {
+        Log.d(TAG, "使用root权限申请文件读写权限");
+        String packageName = getPackageName();
+        
+        // 申请读权限
+        RootUtil.grantPermissionWithRoot(packageName, Manifest.permission.READ_EXTERNAL_STORAGE);
+        // 申请写权限
+        RootUtil.grantPermissionWithRoot(packageName, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        
+        Log.d(TAG, "文件读写权限申请完成");
+    }
+    
+    /**
+     * 新增：使用root权限申请无障碍权限
+     */
+    private void requestAccessibilityPermissionWithRoot() {
+        Log.d(TAG, "使用root权限申请无障碍权限");
+        // 无障碍权限需要用户手动在设置中启用，root权限无法直接授予
+        // 这里只是打开设置页面供用户选择
+        autoTaskHelper.openAccessibilitySettings(this);
+    }
+    
+    /**
+     * 新增：使用root权限申请悬浮窗权限
+     */
+    private void requestFloatWindowPermissionWithRoot() {
+        Log.d(TAG, "使用root权限申请悬浮窗权限");
+        String packageName = getPackageName();
+        RootUtil.grantPermissionWithRoot(packageName, Manifest.permission.SYSTEM_ALERT_WINDOW);
+        Log.d(TAG, "悬浮窗权限申请完成");
+    }
+    
     private void updateStatus() {
         boolean isServiceEnabled = autoTaskHelper.isAccessibilityServiceEnabled(this);
         boolean hasFloatPermission = checkFloatWindowPermission();
-        boolean hasMediaProjection = ScreenshotUtil.getMediaProjection() != null;  // 新增
+        boolean hasMediaProjection = ScreenshotUtil.getMediaProjection() != null;
+        boolean hasReadPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        boolean hasWritePermission = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
 
         StringBuilder status = new StringBuilder();
         status.append("服务状态:\n");
+        status.append("Root权限: ").append(hasRootPermission ? "已获取" : "未获取").append("\n");
         status.append("无障碍服务: ").append(isServiceEnabled ? "已启用" : "未启用").append("\n");
         status.append("悬浮窗权限: ").append(hasFloatPermission ? "已授权" : "未授权").append("\n");
+        status.append("文件读权限: ").append(hasReadPermission ? "已授权" : "未授权").append("\n");
+        status.append("文件写权限: ").append(hasWritePermission ? "已授权" : "未授权").append("\n");
         status.append("截图权限: ").append(hasMediaProjection ? "已获取" : "未获取").append("\n");
 
         statusText.setText(status.toString());
@@ -194,9 +268,15 @@ public class MainActivity extends AppCompatActivity {
     private void requestFloatWindowPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (!Settings.canDrawOverlays(this)) {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:" + getPackageName()));
-                startActivityForResult(intent, REQUEST_FLOAT_WINDOW_PERMISSION);
+                if (hasRootPermission) {
+                    Toast.makeText(this, "检测到Root权限，正在自动申请悬浮窗权限...", Toast.LENGTH_SHORT).show();
+                    // 使用root权限自动授予悬浮窗权限
+                    RootUtil.grantPermissionWithRoot(getPackageName(), "android.permission.SYSTEM_ALERT_WINDOW");
+                } else {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:" + getPackageName()));
+                    startActivityForResult(intent, REQUEST_FLOAT_WINDOW_PERMISSION);
+                }
             } else {
                 Toast.makeText(this, "已拥有悬浮窗权限", Toast.LENGTH_SHORT).show();
             }
