@@ -49,14 +49,12 @@ public class MainActivity extends AppCompatActivity {
         autoTaskHelper = AutoTaskHelper.getInstance();
         autoTaskHelper.initialize();
         
-        // 检测root权限
-        checkAndRequestRootPermission();
-        
         // 初始化UI组件
         initUI();
         
-        // 检查权限和服务状态
-        checkPermissions();
+        // 在应用启动时自动申请root权限（最优先）
+        // 这会在后台线程中执行，完成后会自动检查权限
+        autoRequestRootPermissionOnStartup();
     }
     
     private void initUI() {
@@ -174,11 +172,15 @@ public class MainActivity extends AppCompatActivity {
         // 检查无障碍服务是否启用
         boolean isServiceEnabled = autoTaskHelper.isAccessibilityServiceEnabled(this);
         if (!isServiceEnabled) {
-            if (hasRootPermission) {
-                Toast.makeText(this, "检测到Root权限，正在自动申请无障碍权限...", Toast.LENGTH_LONG).show();
+            // 只有在没有root权限的情况下才主动申请无障碍权限
+            if (!hasRootPermission) {
+                Toast.makeText(this, "请启用无障碍服务", Toast.LENGTH_LONG).show();
                 autoTaskHelper.openAccessibilitySettings(this);
             } else {
-                Toast.makeText(this, "请启用无障碍服务", Toast.LENGTH_LONG).show();
+                // 有root权限但无障碍服务仍未启用，说明root权限申请失败
+                Log.w(TAG, "root权限申请失败，无障碍服务未启用，打开设置页面");
+                Toast.makeText(this, "无障碍服务启用失败，请手动启用", Toast.LENGTH_LONG).show();
+                autoTaskHelper.openAccessibilitySettings(this);
             }
         } else {
             // 尝试初始化悬浮窗
@@ -193,8 +195,63 @@ public class MainActivity extends AppCompatActivity {
     }
     
     /**
-     * 新增：检测并申请root权限
+     * 应用启动时自动申请root权限
      */
+    private void autoRequestRootPermissionOnStartup() {
+        Log.d(TAG, "应用启动，开始自动申请root权限...");
+        
+        // 在后台线程中执行root权限申请，避免阻塞UI
+        new Thread(() -> {
+            try {
+                // 自动申请root权限
+                hasRootPermission = RootUtil.autoRequestRootPermission();
+                
+                Log.d(TAG, "root权限申请结果: " + hasRootPermission);
+                
+                if (hasRootPermission) {
+                    Log.d(TAG, "成功获得root权限，将自动申请相关权限");
+                    
+                    // 延迟一下，确保root权限已完全获取
+                    Thread.sleep(500);
+                    
+                    // 自动申请文件读写权限
+                    requestFilePermissionsWithRoot();
+                    
+                    // 自动申请悬浮窗权限
+                    requestFloatWindowPermissionWithRoot();
+                    
+                    // 自动申请无障碍权限
+                    requestAccessibilityPermissionWithRoot();
+                    
+                    // 在主线程中显示提示并更新状态
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "已自动获得Root权限，相关权限申请中...", Toast.LENGTH_LONG).show();
+                        updateStatus();
+                    });
+                } else {
+                    Log.d(TAG, "未获得root权限，将使用普通权限申请流程");
+                    
+                    // 在主线程中检查权限和服务状态
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "未获得Root权限，请手动授予相关权限", Toast.LENGTH_LONG).show();
+                        checkPermissions();
+                    });
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "自动申请root权限异常: " + e.getMessage());
+                
+                // 异常情况下也要检查权限
+                runOnUiThread(() -> {
+                    checkPermissions();
+                });
+            }
+        }).start();
+    }
+    
+    /**
+     * 检测并申请root权限（已弃用，使用autoRequestRootPermissionOnStartup替代）
+     */
+    @Deprecated
     private void checkAndRequestRootPermission() {
         Log.d(TAG, "开始检测root权限...");
         hasRootPermission = RootUtil.hasRootPermission();
@@ -218,12 +275,19 @@ public class MainActivity extends AppCompatActivity {
         Log.d(TAG, "使用root权限申请文件读写权限");
         String packageName = getPackageName();
         
-        // 申请读权限
-        RootUtil.grantPermissionWithRoot(packageName, Manifest.permission.READ_EXTERNAL_STORAGE);
-        // 申请写权限
-        RootUtil.grantPermissionWithRoot(packageName, Manifest.permission.WRITE_EXTERNAL_STORAGE);
-        
-        Log.d(TAG, "文件读写权限申请完成");
+        try {
+            // 申请读权限
+            boolean readResult = RootUtil.grantPermissionWithRoot(packageName, Manifest.permission.READ_EXTERNAL_STORAGE);
+            Log.d(TAG, "READ_EXTERNAL_STORAGE权限申请结果: " + readResult);
+            
+            // 申请写权限
+            boolean writeResult = RootUtil.grantPermissionWithRoot(packageName, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+            Log.d(TAG, "WRITE_EXTERNAL_STORAGE权限申请结果: " + writeResult);
+            
+            Log.d(TAG, "文件读写权限申请完成");
+        } catch (Exception e) {
+            Log.e(TAG, "文件权限申请异常: " + e.getMessage());
+        }
     }
     
     /**
@@ -231,9 +295,45 @@ public class MainActivity extends AppCompatActivity {
      */
     private void requestAccessibilityPermissionWithRoot() {
         Log.d(TAG, "使用root权限申请无障碍权限");
-        // 无障碍权限需要用户手动在设置中启用，root权限无法直接授予
-        // 这里只是打开设置页面供用户选择
-        autoTaskHelper.openAccessibilitySettings(this);
+        
+        try {
+            // 获取无障碍服务的完整名称
+            String packageName = getPackageName();
+            String serviceName = "com.dy.autotask.AccessibilityServiceUtil";
+            
+            // 尝试使用root权限启用无障碍服务
+            boolean result = RootUtil.enableAccessibilityServiceWithRoot(packageName, serviceName);
+            
+            if (result) {
+                Log.d(TAG, "无障碍服务已通过root权限启用");
+                // 延迟一下让系统更新状态
+                Thread.sleep(1000);
+                // 检查是否真的启用了
+                boolean isEnabled = autoTaskHelper.isAccessibilityServiceEnabled(this);
+                Log.d(TAG, "无障碍服务启用状态检查: " + isEnabled);
+                
+                if (isEnabled) {
+                    Log.d(TAG, "无障碍服务启用成功");
+                } else {
+                    Log.w(TAG, "无障碍服务启用失败，将在主线程中打开设置页面");
+                    runOnUiThread(() -> {
+                        autoTaskHelper.openAccessibilitySettings(this);
+                    });
+                }
+            } else {
+                Log.d(TAG, "无障碍服务启用失败，打开设置页面");
+                // 如果root权限启用失败，打开设置页面让用户手动启用
+                runOnUiThread(() -> {
+                    autoTaskHelper.openAccessibilitySettings(this);
+                });
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "申请无障碍权限异常: " + e.getMessage());
+            // 异常情况下也打开设置页面
+            runOnUiThread(() -> {
+                autoTaskHelper.openAccessibilitySettings(this);
+            });
+        }
     }
     
     /**
@@ -242,8 +342,13 @@ public class MainActivity extends AppCompatActivity {
     private void requestFloatWindowPermissionWithRoot() {
         Log.d(TAG, "使用root权限申请悬浮窗权限");
         String packageName = getPackageName();
-        RootUtil.grantPermissionWithRoot(packageName, Manifest.permission.SYSTEM_ALERT_WINDOW);
-        Log.d(TAG, "悬浮窗权限申请完成");
+        
+        try {
+            boolean result = RootUtil.grantPermissionWithRoot(packageName, Manifest.permission.SYSTEM_ALERT_WINDOW);
+            Log.d(TAG, "SYSTEM_ALERT_WINDOW权限申请结果: " + result);
+        } catch (Exception e) {
+            Log.e(TAG, "悬浮窗权限申请异常: " + e.getMessage());
+        }
     }
     
     private void updateStatus() {
