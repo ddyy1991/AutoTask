@@ -84,6 +84,57 @@ public class RootUtil {
     }
 
     /**
+     * 自动申请root权限（应用启动时调用）
+     * 该方法会尝试获取root权限，并返回是否成功
+     */
+    public static boolean autoRequestRootPermission() {
+        Log.d(TAG, "开始自动申请root权限...");
+        
+        // 先检测是否已有root权限
+        if (hasRootPermission()) {
+            Log.d(TAG, "已检测到root权限");
+            return true;
+        }
+        
+        // 尝试申请root权限
+        Log.d(TAG, "尝试申请root权限...");
+        boolean result = requestRootPermission();
+        
+        if (result) {
+            Log.d(TAG, "root权限申请成功");
+        } else {
+            Log.d(TAG, "root权限申请失败或被拒绝");
+        }
+        
+        return result;
+    }
+
+    /**
+     * 启用无障碍服务（使用root权限）
+     */
+    public static boolean enableAccessibilityServiceWithRoot(String packageName, String serviceName) {
+        try {
+            // 使用settings命令启用无障碍服务
+            String command = "settings put secure enabled_accessibility_services " + packageName + "/" + serviceName;
+            Log.d(TAG, "执行启用无障碍服务命令: " + command);
+            boolean result = executeCommandAsRoot(command);
+            
+            if (result) {
+                // 再执行一个命令来启用accessibility
+                String command2 = "settings put secure accessibility_enabled 1";
+                Log.d(TAG, "执行启用accessibility命令: " + command2);
+                executeCommandAsRoot(command2);
+            }
+            
+            Log.d(TAG, "无障碍服务启用结果: " + result);
+            return result;
+        } catch (Exception e) {
+            Log.e(TAG, "启用无障碍服务异常: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * 使用root权限执行命令
      */
     public static boolean executeCommandAsRoot(String command) {
